@@ -1,0 +1,1 @@
+drmemory "C:\Program Files\MATLAB\R2014a\bin\win64\MATLAB.exe" -nojvm -nodisplay -r "run D:\macro_local\nnet\code\cmex\test_simple.m"
