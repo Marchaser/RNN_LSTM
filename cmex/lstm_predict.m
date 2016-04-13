@@ -15,7 +15,7 @@ v2struct(weights);
 yhat_out = zeros(yDim,Ts);
 
 %% Precompute gifo_x
-gifo_x_t = zeros(gDim*4,T+batchSize-1);
+gifo_x_t = zeros(hDim*4,T+batchSize-1);
 gifo_x_t(:,end-T+2:end) = W_gifo_x * xData(:,1:T-1);
 
 %% Loop for each batch of sample
@@ -40,18 +40,18 @@ while batchStart<=Ts
     pNewDataStart = pDataEnd+1;
     
     % Prepare time series for computation
-    g_t = zeros(gDim,batchSize,T);
-    glin_t = zeros(gDim,batchSize,T);
-    i_t = zeros(gDim,batchSize,T);
-    ilin_t = zeros(gDim,batchSize,T);
-    f_t = zeros(gDim,batchSize,T);
-    flin_t = zeros(gDim,batchSize,T);
-    o_t = zeros(gDim,batchSize,T);
-    olin_t = zeros(gDim,batchSize,T);
+    g_t = zeros(hDim,batchSize,T);
+    glin_t = zeros(hDim,batchSize,T);
+    i_t = zeros(hDim,batchSize,T);
+    ilin_t = zeros(hDim,batchSize,T);
+    f_t = zeros(hDim,batchSize,T);
+    flin_t = zeros(hDim,batchSize,T);
+    o_t = zeros(hDim,batchSize,T);
+    olin_t = zeros(hDim,batchSize,T);
     
-    h_t = zeros(gDim,batchSize,T);
-    s_t = zeros(gDim,batchSize,T);
-    tanhs_t = zeros(gDim,batchSize,T);
+    h_t = zeros(hDim,batchSize,T);
+    s_t = zeros(hDim,batchSize,T);
+    tanhs_t = zeros(hDim,batchSize,T);
     
     ylin_t = zeros(yDim,batchSize,T);
     yhat_t = zeros(yDim,batchSize,T);
@@ -60,8 +60,8 @@ while batchStart<=Ts
     for t=1:T
         if t==1
             % Memory is truncated before time 1
-            hm = zeros(gDim,batchSize,1);
-            sm = zeros(gDim,batchSize,1);
+            hm = zeros(hDim,batchSize,1);
+            sm = zeros(hDim,batchSize,1);
         else
             hm = h_t(:,:,t-1);
             sm = s_t(:,:,t-1);

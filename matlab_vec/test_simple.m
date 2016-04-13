@@ -31,9 +31,9 @@ dfuncLoss = @(y,yhat) [yhat - y]';
 %% Some hyper parameters
 temperature = 1;
 batchSize = 50;
-learningRate = 0.1;
-T = 3; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
-gDim = 20;
+learningRate = 0.01;
+T = 10; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
+gDim = 64;
 params = v2struct(temperature,batchSize,learningRate,T,gDim);
 
 %% Train

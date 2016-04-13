@@ -1,12 +1,12 @@
 % Compute forwardpass one time
 gifo_lin = gifo_x_t(:,t:t+batchSize-1) + W_gifo_h*hm + repmat(b_gifo,1,batchSize);
-glin = gifo_lin(0*gDim+1:1*gDim,:);
+glin = gifo_lin(0*hDim+1:1*hDim,:);
 g = tanh(glin);
-ilin = gifo_lin(1*gDim+1:2*gDim,:);
+ilin = gifo_lin(1*hDim+1:2*hDim,:);
 ii = sigmoid(ilin);
-flin = gifo_lin(2*gDim+1:3*gDim,:);
+flin = gifo_lin(2*hDim+1:3*hDim,:);
 f = sigmoid(flin);
-olin = gifo_lin(3*gDim+1:4*gDim,:);
+olin = gifo_lin(3*hDim+1:4*hDim,:);
 o = sigmoid(olin);
 
 s = g.*ii + sm.*f;

@@ -7,7 +7,7 @@ function test_simple
 
 %% Generate number
 xData0 = [1 2];
-Ts = 1e5;
+Ts = 1e4;
 for t=1:Ts
     xNext = mod(xData0(end)+xData0(end-1),10);
     xData0 = [xData0 xNext];
@@ -30,16 +30,17 @@ dfuncLoss = @(y,yhat) [yhat - y]';
 
 %% Some hyper parameters
 temperature = 1;
-batchSize = 100;
-learningRate = 0.1;
-T = 100; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
-gDim = 128;
+batchSize = 50;
+learningRate = 0.01;
+T = 10; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
+hDim = 64;
 NumThreads = 4;
-params = v2struct(temperature,batchSize,learningRate,T,gDim,NumThreads);
+saveFreq = 50;
+params = v2struct(temperature,batchSize,learningRate,T,hDim,NumThreads,saveFreq);
 
 %% Train
-weights = lstm_train(xData,yData,funcLoss,dfuncLoss,params);
+weights = lstm_train2(xData,yData,funcLoss,dfuncLoss,params);
 
 %% Predict
-yhat = lstm_predict(xData(:,1:21),params,weights);
+yhat = lstm_predict(xData(:,1:101),params,weights);
 end

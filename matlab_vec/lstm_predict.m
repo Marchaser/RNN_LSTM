@@ -67,6 +67,8 @@ while batchStart<=Ts
             sm = s_t(:,:,t-1);
         end
         
+        dropOutDraws = ones(gDim,batchSize);
+        
         forward_pass;
         
         % Write to time series variable
