@@ -4,6 +4,7 @@ function test_simple
 % of the previous 2 numbers
 % For example
 % 123583145943707741561785381909987527965167303369549
+clear mex;
 
 %% Generate number
 xData0 = [1 2];
@@ -30,17 +31,19 @@ dfuncLoss = @(y,yhat) [yhat - y]';
 
 %% Some hyper parameters
 temperature = 1;
-batchSize = 50;
+batchSize = 64;
 learningRate = 0.01;
 T = 10; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
 hDim = 64;
+xDim = size(xData,1);
+yDim = size(yData,1);
 NumThreads = 4;
 saveFreq = 50;
-params = v2struct(temperature,batchSize,learningRate,T,hDim,NumThreads,saveFreq);
+params = v2struct(temperature,batchSize,learningRate,T,xDim,yDim,hDim,NumThreads,saveFreq);
 
 %% Train
-weights = lstm_train2(xData,yData,funcLoss,dfuncLoss,params);
+weights = lstm_train(xData,yData,funcLoss,dfuncLoss,params);
 
 %% Predict
-yhat = lstm_predict(xData(:,1:101),params,weights);
+yhat = lstm_predict(xData(:,1:1001),params,weights);
 end

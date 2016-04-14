@@ -9,22 +9,70 @@
 #endif
 
 #define SIGMOID(x) 1/(1+exp(-x))
+#define TANH(x) (1-exp(-2*x)/(1+exp(-2*x)))
+
+#define RNN_ERR_ALLOC_BATCH_SIZE_TOO_SMALL -1
+#define RNN_ERR_WEIGHTS_UNINITIATED -2
+#define RNN_ERR_DWEIGHTS_UNINITIATED -3
+
+#pragma region LstmLayer
 
 template <typename T>
 class LstmLayer {
+private:
+	T* memory;
+
 public:
 	int xDim;
 	int hDim;
 	int periods;
 	int xhDim;
 	int gifoDim;
+
+	int batchSize;
+	int memorySize;
+
+	int hasPreallocSpace;
+	int isInit;
 	
 	// Constructor
-	LstmLayer(int _xDim, int _hDim, int _periods)
-		: xDim(_xDim), hDim(_hDim), periods(_periods)
+	LstmLayer() : xDim(0), hDim(0), periods(0), batchSize(0), gifoDim(0), xhDim(0), memorySize(0), hasPreallocSpace(0), isInit(0) {};
+	LstmLayer(int _xDim, int _hDim, int _periods, int _batchSize, T* _prealloc_space = 0)
+		: xDim(_xDim), hDim(_hDim), periods(_periods), batchSize(_batchSize), memory(_prealloc_space), isInit(0)
+	{
+		hasPreallocSpace = (_prealloc_space != 0);
+		init();
+	}
+
+	void init()
 	{
 		xhDim = xDim + hDim;
 		gifoDim = hDim * 4;
+		memorySize = computeMemorySize();
+
+		if (memory != 0)
+		{
+			assign_memory();
+		}
+		else
+		{
+			alloc();
+		}
+
+		// Set constant
+		for (int j = 0; j < batchSize; j++)
+		{
+			ONES_BATCH_SIZE[j] = 1;
+		}
+		memset(ZEROS_H_STRIDE, 0, sizeof(T)*hDim*batchSize);
+
+		isInit = 1;
+	}
+
+	// Destructor
+	~LstmLayer() 
+	{
+		dealloc();
 	}
 
 	T* weights_x;
@@ -34,6 +82,10 @@ public:
 	// Used for forward propagation
 	T* x_t;
 	T* gifo_lin_t;
+	T* g_lin;
+	T* i_lin;
+	T* f_lin;
+	T* o_lin;
 	T* g_t;
 	T* i_t;
 	T* f_t;
@@ -60,7 +112,6 @@ public:
 	// Information down to the lower layer
 	T* dx_t;
 
-
 	// Derivative of weights
 	T* dweights_x;
 	T* dweights_h;
@@ -79,32 +130,294 @@ public:
 		memset(dbiases, 0, sizeof(T)*gifoDim);
 	}
 
-	void forward_pass(int t, int batchSize);
-	void back_propagation(int t, int batchSize);
+	void dealloc();
+	void alloc();
+	int computeMemorySize();
+	void assign_memory();
+
+	int forward_pass(int t);
+	int back_propagation(int t);
 };
 
-template<>
-void LstmLayer<float>::forward_pass(int t, int batchSize)
+template<typename T>
+int LstmLayer<T>::computeMemorySize()
 {
+	int ptr = 0;
+
+	// dweights_x = ptr;
+	ptr += xDim*gifoDim;
+	// dweights_h = ptr;
+	ptr += hDim*gifoDim;
+	// dbiases = ptr;
+	ptr += gifoDim;
+
+	// x_t = ptr;
+	ptr += xDim*batchSize*periods;
+
+	// gifo_lin_t = ptr;
+	ptr += gifoDim*batchSize*periods;
+
+	// g_lin = ptr;
+	ptr += hDim*batchSize;
+	// i_lin = ptr;
+	ptr += hDim*batchSize;
+	// f_lin = ptr;
+	ptr += hDim*batchSize;
+	// o_lin = ptr;
+	ptr += hDim*batchSize;
+
+	// g_t = ptr;
+	ptr += hDim*batchSize*periods;
+	// i_t = ptr;
+	ptr += hDim*batchSize*periods;
+	// f_t = ptr;
+	ptr += hDim*batchSize*periods;
+	// o_t = ptr;
+	ptr += hDim*batchSize*periods;
+	// h_t = ptr;
+	ptr += hDim*batchSize*periods;
+	// s_t = ptr;
+	ptr += hDim*batchSize*periods;
+	// tanhs_t = ptr;
+	ptr += hDim*batchSize*periods;
+
+	// Used for backward propagation
+	// Information from the upper layer
+	// dtop_t = ptr;
+	ptr += hDim*batchSize*periods;
+	// Information within current period
+	// dh = ptr;
+	ptr += hDim*batchSize;
+	// ds = ptr;
+	ptr += hDim*batchSize;
+	// doo = ptr;
+	ptr += hDim*batchSize;
+	// dtanhs = ptr;
+	ptr += hDim*batchSize;
+	// dg = ptr;
+	ptr += hDim*batchSize;
+	// di = ptr;
+	ptr += hDim*batchSize;
+	// df = ptr;
+	ptr += hDim*batchSize;
+	// dgifo_lin = ptr;
+	ptr += gifoDim*batchSize;
+	// Information down to time period
+	// dhm = ptr;
+	ptr += hDim*batchSize;
+	// dsm = ptr;
+	ptr += hDim*batchSize;
+	// Information down to the lower layer
+	// dx_t = ptr;
+	ptr += xDim*batchSize*periods;
+
+	// Temporary and constant space
+	// g_temp = ptr;
+	ptr += hDim*batchSize;
+
+	// ONES_BATCH_SIZE = ptr;
+	ptr += batchSize;
+
+	// ZEROS_H_STRIDE = ptr;
+	ptr += hDim*batchSize;
+
+	return ptr;
+}
+
+template<typename T>
+void LstmLayer<T>::assign_memory()
+{
+	T* ptr = memory;
+
+	dweights_x = ptr;
+	ptr += xDim*gifoDim;
+	dweights_h = ptr;
+	ptr += hDim*gifoDim;
+	dbiases = ptr;
+	ptr += gifoDim;
+
+	x_t = ptr;
+	ptr += xDim*batchSize*periods;
+
+	gifo_lin_t = ptr;
+	ptr += gifoDim*batchSize*periods;
+
+	g_lin = ptr;
+	ptr += hDim*batchSize;
+	i_lin = ptr;
+	ptr += hDim*batchSize;
+	f_lin = ptr;
+	ptr += hDim*batchSize;
+	o_lin = ptr;
+	ptr += hDim*batchSize;
+
+	g_t = ptr;
+	ptr += hDim*batchSize*periods;
+	i_t = ptr;
+	ptr += hDim*batchSize*periods;
+	f_t = ptr;
+	ptr += hDim*batchSize*periods;
+	o_t = ptr;
+	ptr += hDim*batchSize*periods;
+	h_t = ptr;
+	ptr += hDim*batchSize*periods;
+	s_t = ptr;
+	ptr += hDim*batchSize*periods;
+	tanhs_t = ptr;
+	ptr += hDim*batchSize*periods;
+
+	// Used for backward propagation
+	// Information from the upper layer
+	dtop_t = ptr;
+	ptr += hDim*batchSize*periods;
+	// Information within current period
+	dh = ptr;
+	ptr += hDim*batchSize;
+	ds = ptr;
+	ptr += hDim*batchSize;
+	doo = ptr;
+	ptr += hDim*batchSize;
+	dtanhs = ptr;
+	ptr += hDim*batchSize;
+	dg = ptr;
+	ptr += hDim*batchSize;
+	di = ptr;
+	ptr += hDim*batchSize;
+	df = ptr;
+	ptr += hDim*batchSize;
+	dgifo_lin = ptr;
+	ptr += gifoDim*batchSize;
+	// Information down to time period
+	dhm = ptr;
+	ptr += hDim*batchSize;
+	dsm = ptr;
+	ptr += hDim*batchSize;
+	// Information down to the lower layer
+	dx_t = ptr;
+	ptr += xDim*batchSize*periods;
+
+	// Temporary and constant space
+	g_temp = ptr;
+	ptr += hDim*batchSize;
+
+	ONES_BATCH_SIZE = ptr;
+	ptr += batchSize;
+
+	ZEROS_H_STRIDE = ptr;
+	ptr += hDim*batchSize;
+}
+
+template<typename T>
+void LstmLayer<T>::dealloc()
+{
+	if (hasPreallocSpace)
+		return;
+
+	// Deallocate space
+	free(x_t);
+
+	free(gifo_lin_t);
+
+	free(g_lin);
+	free(i_lin);
+	free(f_lin);
+	free(o_lin);
+
+	free(g_t);
+	free(i_t);
+	free(f_t);
+	free(o_t);
+	free(h_t);
+	free(s_t);
+	free(tanhs_t);
+
+	// Used for backward propagation
+	// Information from the upper layer
+	free(dtop_t);
+	// Information within current period
+	free(dh);
+	free(ds);
+	free(doo);
+	free(dtanhs);
+	free(dg);
+	free(di);
+	free(df);
+	free(dgifo_lin);
+	// Information down to time period
+	free(dhm);
+	free(dsm);
+	// Information down to the lower layer
+	free(dx_t);
+
+	// Temporary and constant space
+	free(g_temp);
+
+	free(ONES_BATCH_SIZE);
+	free(ZEROS_H_STRIDE);
+}
+
+template<typename T>
+void LstmLayer<T>::alloc()
+{
+	if (memory != 0)
+		return;
+
+	// Allocate memory
+	x_t = (T*)malloc(sizeof(T)*xDim*batchSize*periods);
+
+	gifo_lin_t = (T*)malloc(sizeof(T)*gifoDim*batchSize*periods);
+
+	g_lin = (T*)malloc(sizeof(T)*hDim*batchSize);
+	i_lin = (T*)malloc(sizeof(T)*hDim*batchSize);
+	f_lin = (T*)malloc(sizeof(T)*hDim*batchSize);
+	o_lin = (T*)malloc(sizeof(T)*hDim*batchSize);
+
+	g_t = (T*)malloc(sizeof(T)*hDim*batchSize*periods);
+	i_t = (T*)malloc(sizeof(T)*hDim*batchSize*periods);
+	f_t = (T*)malloc(sizeof(T)*hDim*batchSize*periods);
+	o_t = (T*)malloc(sizeof(T)*hDim*batchSize*periods);
+	h_t = (T*)malloc(sizeof(T)*hDim*batchSize*periods);
+	s_t = (T*)malloc(sizeof(T)*hDim*batchSize*periods);
+	tanhs_t = (T*)malloc(sizeof(T)*hDim*batchSize*periods);
+
+	// Used for backward propagation
+	// Information from the upper layer
+	dtop_t = (T*)malloc(sizeof(T)*hDim*batchSize*periods);
+	// Information within current period
+	dh = (T*)malloc(sizeof(T)*hDim*batchSize);
+	ds = (T*)malloc(sizeof(T)*hDim*batchSize);
+	doo = (T*)malloc(sizeof(T)*hDim*batchSize);
+	dtanhs = (T*)malloc(sizeof(T)*hDim*batchSize);
+	dg = (T*)malloc(sizeof(T)*hDim*batchSize);
+	di = (T*)malloc(sizeof(T)*hDim*batchSize);
+	df = (T*)malloc(sizeof(T)*hDim*batchSize);
+	dgifo_lin = (T*)malloc(sizeof(T)*gifoDim*batchSize);
+	// Information down to time period
+	dhm = (T*)malloc(sizeof(T)*hDim*batchSize);
+	dsm = (T*)malloc(sizeof(T)*hDim*batchSize);
+	// Information down to the lower layer
+	dx_t = (T*)malloc(sizeof(T)*xDim*batchSize*periods);
+
+	// Temporary and constant space
+	g_temp = (T*)malloc(sizeof(T)*hDim*batchSize);
+
+	ONES_BATCH_SIZE = (T*)malloc(sizeof(T)*batchSize);
+	ZEROS_H_STRIDE = (T*)malloc(sizeof(T)*hDim*batchSize);
+}
+
+template<>
+int LstmLayer<float>::forward_pass(int t)
+{
+	if (!weights_x | !weights_h | !biases)
+	{
+		return RNN_ERR_WEIGHTS_UNINITIATED;
+	}
+
 	int xStride = batchSize*xDim;
 	int hStride = batchSize*hDim;
 	int gifoStride = batchSize*gifoDim;
 	// Convert to 0 based
 	int tidx = t - 1;
-
-	float* hm;
-	float* sm;
-	if (t == 1)
-	{
-		// Use the space for h_t
-		hm = ZEROS_H_STRIDE;
-		sm = ZEROS_H_STRIDE;
-	}
-	else
-	{
-		hm = h_t + (tidx - 1)*hStride;
-		sm = s_t + (tidx - 1)*hStride;
-	}
 
 	// Extract time t variable
 	float* x = x_t + tidx*xStride;
@@ -118,56 +431,63 @@ void LstmLayer<float>::forward_pass(int t, int batchSize)
 	float* tanhs = tanhs_t + tidx*hStride;
 
 	// Forward pass one time
+	float* hm;
+	float* sm;
+	if (t > 1)
+	{
+		hm = h_t + (tidx - 1)*hStride;
+		sm = s_t + (tidx - 1)*hStride;
+	}
+	else
+	{
+		hm = ZEROS_H_STRIDE;
+		sm = ZEROS_H_STRIDE;
+	}
+
 	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, gifoDim, batchSize, xDim, 1, weights_x, gifoDim, x, xDim, 0, gifo_lin, gifoDim);
 	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, gifoDim, batchSize, hDim, 1, weights_h, gifoDim, hm, hDim, 1, gifo_lin, gifoDim);
-
-#ifdef USE_OMP
-#pragma omp parallel for
-#endif
+	// Plus biases
 	for (int j = 0; j < batchSize; j++)
 	{
-		float* gifo_lin_j = &gifo_lin[j*gifoDim];
-		float* glin_j = gifo_lin_j + 0 * hDim;
-		float* ilin_j = gifo_lin_j + 1 * hDim;
-		float* flin_j = gifo_lin_j + 2 * hDim;
-		float* olin_j = gifo_lin_j + 3 * hDim;
-		float* g_j = g + j*hDim;
-		float* ii_j = ii + j*hDim;
-		float* f_j = f + j*hDim;
-		float* o_j = o + j*hDim;
-		float* s_j = s + j*hDim;
-		float* tanhs_j = tanhs + j*hDim;
-		float* h_j = h + j*hDim;
-		float* sm_j = sm + j*hDim;
-
-		// Plus biases
-#ifdef USE_OMP
+		float* gifo_lin_j = gifo_lin + j*gifoDim;
 #pragma simd
-#endif
 		for (int k = 0; k < gifoDim; k++)
-		{
 			gifo_lin_j[k] += biases[k];
-		}
 
-#ifdef USE_OMP
-#pragma simd
-#endif
-		for (int k = 0; k < hDim; k++)
-		{
-			g_j[k] = tanh(glin_j[k]);
-			ii_j[k] = SIGMOID(ilin_j[k]);
-			f_j[k] = SIGMOID(flin_j[k]);
-			o_j[k] = SIGMOID(olin_j[k]);
-			s_j[k] = g_j[k] * ii_j[k] + sm_j[k] * f_j[k];
-			tanhs_j[k] = tanh(s_j[k]);
-			h_j[k] = tanhs_j[k] * o_j[k];
-		}
+		memcpy(g_lin + j*hDim, gifo_lin + j*gifoDim + 0 * hDim, sizeof(float)*hDim);
+		memcpy(i_lin + j*hDim, gifo_lin + j*gifoDim + 1 * hDim, sizeof(float)*hDim);
+		memcpy(f_lin + j*hDim, gifo_lin + j*gifoDim + 2 * hDim, sizeof(float)*hDim);
+		memcpy(o_lin + j*hDim, gifo_lin + j*gifoDim + 3 * hDim, sizeof(float)*hDim);
 	}
+
+#pragma simd
+	for (int k = 0; k < hStride; k++)
+	{
+		g[k] = tanh(g_lin[k]);
+		ii[k] = SIGMOID(i_lin[k]);
+		f[k] = SIGMOID(f_lin[k]);
+		o[k] = SIGMOID(o_lin[k]);
+		s[k] = g[k] * ii[k] + sm[k] * f[k];
+		tanhs[k] = tanh(s[k]);
+		h[k] = tanhs[k] * o[k];
+	}
+
+	return 0;
 }
 
 template<>
-void LstmLayer<float>::back_propagation(int t, int batchSize)
+int LstmLayer<float>::back_propagation(int t)
 {
+	if (batchSize > batchSize)
+	{
+		return RNN_ERR_ALLOC_BATCH_SIZE_TOO_SMALL;
+	}
+
+	if (!dweights_x | !dweights_h | !dbiases)
+	{
+		return RNN_ERR_DWEIGHTS_UNINITIATED;
+	}
+
 	int xStride = batchSize*xDim;
 	int hStride = batchSize*hDim;
 	int gifoStride = batchSize*gifoDim;
@@ -178,7 +498,6 @@ void LstmLayer<float>::back_propagation(int t, int batchSize)
 	float* sm;
 	if (t == 1)
 	{
-		// Use the space for h_t
 		hm = ZEROS_H_STRIDE;
 		sm = ZEROS_H_STRIDE;
 	}
@@ -195,10 +514,9 @@ void LstmLayer<float>::back_propagation(int t, int batchSize)
 	float* f = f_t + tidx*hStride;
 	float* o = o_t + tidx*hStride;
 	float* h = h_t + tidx*hStride;
-	float* hp = h_t + (tidx + 1)*hStride;
 	float* s = s_t + tidx*hStride;
 	float* tanhs = tanhs_t + tidx*hStride;
-	
+
 	float* dtop = dtop_t + tidx*hStride;
 	float* dx = dx_t + tidx*xStride;
 
@@ -225,9 +543,7 @@ void LstmLayer<float>::back_propagation(int t, int batchSize)
 	// dh = dh + dupper
 	if (t == periods) {
 		// Last period
-#ifdef USE_OMP
-#pragma omp parallel for simd
-#endif
+#pragma simd
 		for (int j = 0; j < hStride; j++)
 		{
 			dh[j] = dtop[j];
@@ -236,9 +552,7 @@ void LstmLayer<float>::back_propagation(int t, int batchSize)
 	}
 	else
 	{
-#ifdef USE_OMP
-#pragma omp parallel for simd
-#endif
+#pragma simd
 		for (int j = 0; j < hStride; j++)
 		{
 			dh[j] = dhm[j] + dtop[j];
@@ -260,13 +574,12 @@ void LstmLayer<float>::back_propagation(int t, int batchSize)
 	dolin = do.*(o.*(1-o))';
 	dgifo_lin = [dglin,dilin,dflin,dolin];
 	*/
-	float* dglin = dgifo_lin + 0 * hStride;
-	float* dilin = dgifo_lin + 1 * hStride;
-	float* dflin = dgifo_lin + 2 * hStride;
-	float* dolin = dgifo_lin + 3 * hStride;
-#ifdef USE_OMP
-#pragma omp parallel for simd
-#endif
+	float* dg_lin = dgifo_lin + 0 * hStride;
+	float* di_lin = dgifo_lin + 1 * hStride;
+	float* df_lin = dgifo_lin + 2 * hStride;
+	float* doo_lin = dgifo_lin + 3 * hStride;
+
+#pragma simd
 	for (int j = 0; j < hStride; j++)
 	{
 		doo[j] = dh[j] * tanhs[j];
@@ -277,10 +590,10 @@ void LstmLayer<float>::back_propagation(int t, int batchSize)
 		dsm[j] = ds[j] * f[j];
 		df[j] = ds[j] * sm[j];
 
-		dglin[j] = dg[j] * (1 - g[j] * g[j]);
-		dilin[j] = di[j] * (ii[j] * (1 - ii[j]));
-		dflin[j] = df[j] * (f[j] * (1 - f[j]));
-		dolin[j] = doo[j] * (o[j] * (1 - o[j]));
+		dg_lin[j] = dg[j] * (1 - g[j] * g[j]);
+		di_lin[j] = di[j] * (ii[j] * (1 - ii[j]));
+		df_lin[j] = df[j] * (f[j] * (1 - f[j]));
+		doo_lin[j] = doo[j] * (o[j] * (1 - o[j]));
 	}
 
 	// dW_x = dW_x + dgifo_lin'*x';
@@ -294,18 +607,66 @@ void LstmLayer<float>::back_propagation(int t, int batchSize)
 	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, batchSize, hDim, gifoDim, 1, dgifo_lin, batchSize, weights_h, gifoDim, 0, dhm, batchSize);
 	// dx = dgifo_lin * W_x
 	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, batchSize, xDim, gifoDim, 1, dgifo_lin, batchSize, weights_x, gifoDim, 0, dx, batchSize);
+
+	return 0;
 }
 
+#pragma endregion LstmLayer
+
+#pragma region SoftmaxLayer
 
 template <typename T>
 class SoftmaxLayer {
-public: 
+private:
+	T* memory;
+
+public:
 	int hDim;
 	int yDim;
 	int periods;
+	int batchSize;
+
+	int hasPreallocSpace;
+	int memorySize;
+
+	int isInit;
 
 	// Constructor
-	SoftmaxLayer(int _hDim, int _yDim, int _periods) : hDim(_hDim), yDim(_yDim), periods(_periods) {};
+	SoftmaxLayer() : hDim(0), yDim(0), periods(0), batchSize(0), hasPreallocSpace(0), memorySize(0), isInit(0){};
+	SoftmaxLayer(int _hDim, int _yDim, int _periods, int _batchSize, T* _prealloc_space = 0)
+		: hDim(_hDim), yDim(_yDim), periods(_periods), batchSize(_batchSize), memory(_prealloc_space), isInit(0)
+	{
+		hasPreallocSpace = (_prealloc_space != 0);
+		init();
+	}
+
+	void init()
+	{
+		memorySize = computeMemorySize();
+
+		// Allocate space
+		if (memory != 0)
+		{
+			assign_memory();
+		}
+		else
+		{
+			alloc();
+		}
+
+		// Assign constant
+		for (int j = 0; j < batchSize; j++)
+		{
+			ONES_BATCH_SIZE[j] = 1;
+		}
+
+		isInit = 1;
+	}
+
+	~SoftmaxLayer()
+	{
+		dealloc();
+	}
 
 	// weights
 	T* weights;
@@ -313,7 +674,7 @@ public:
 
 	// Input
 	T* h_t;
-	
+
 	// Output
 	T* y_t;
 
@@ -333,20 +694,128 @@ public:
 	// Constant used in computation
 	T* ONES_BATCH_SIZE;
 
+	void dealloc();
+
+	void alloc();
+	void assign_memory();
+	int computeMemorySize();
+
 	void init_dweights()
 	{
 		memset(dweights, 0, sizeof(T)*hDim*yDim);
 		memset(dbiases, 0, sizeof(T)*yDim);
 	}
 
-	void forward_pass(int t, int batchSize);
+	int forward_pass(int t, double temperature = 1);
 
-	void back_propagation(int t, int batchSize);
+	int back_propagation(int t);
 };
 
-template<>
-void SoftmaxLayer<float>::forward_pass(int t, int batchSize)
+template<typename T>
+void SoftmaxLayer<T>::dealloc()
 {
+	if (hasPreallocSpace)
+		return;
+
+	free(h_t);
+	free(y_t);
+	free(ylin_t);
+	free(yhat_t);
+	free(loss_t);
+
+	// Back
+	free(dyhat);
+	free(dh_t);
+
+	// Constant
+	free(ONES_BATCH_SIZE);
+}
+
+template<typename T>
+int SoftmaxLayer<T>::computeMemorySize()
+{
+	int ptr = 0;
+
+	// h_t = ptr;
+	ptr += hDim*batchSize*periods;
+	// y_t = ptr;
+	ptr += yDim*batchSize*periods;
+	// ylin_t = ptr;
+	ptr += yDim*batchSize*periods;
+	// yhat_t = ptr;
+	ptr += yDim*batchSize*periods;
+	// loss_t = ptr;
+	ptr += batchSize*periods;
+
+	// Back
+	// dyhat = ptr;
+	ptr += yDim*batchSize;
+	// dh_t = ptr;
+	ptr += hDim*batchSize*periods;
+
+	// Constant
+	// ONES_BATCH_SIZE = ptr;
+	ptr += batchSize;
+
+	return ptr;
+}
+
+template<typename T>
+void SoftmaxLayer<T>::assign_memory()
+{
+	// Forward
+	T* ptr = memory;
+
+	h_t = ptr;
+	ptr += hDim*batchSize*periods;
+	y_t = ptr;
+	ptr += yDim*batchSize*periods;
+	ylin_t = ptr;
+	ptr += yDim*batchSize*periods;
+	yhat_t = ptr;
+	ptr += yDim*batchSize*periods;
+	loss_t = ptr;
+	ptr += batchSize*periods;
+
+	// Back
+	dyhat = ptr;
+	ptr += yDim*batchSize;
+	dh_t = ptr;
+	ptr += hDim*batchSize*periods;
+
+	// Constant
+	ONES_BATCH_SIZE = ptr;
+	ptr += batchSize;
+}
+
+template<typename T>
+void SoftmaxLayer<T>::alloc()
+{
+	if (memory != 0)
+		return;
+
+	h_t = (T*)malloc(sizeof(T)*hDim*batchSize*periods);
+	y_t = (T*)malloc(sizeof(T)*yDim*batchSize*periods);
+	ylin_t = (T*)malloc(sizeof(T)*yDim*batchSize*periods);
+	yhat_t = (T*)malloc(sizeof(T)*yDim*batchSize*periods);
+	loss_t = (T*)malloc(sizeof(T)*batchSize*periods);
+
+	// Back
+	dyhat = (T*)malloc(sizeof(T)*yDim*batchSize);
+	dh_t = (T*)malloc(sizeof(T)*hDim*batchSize*periods);
+
+	// Constant
+	ONES_BATCH_SIZE = (T*)malloc(sizeof(T)*batchSize);
+}
+
+template<>
+int SoftmaxLayer<float>::forward_pass(int t, double temperature)
+{
+	if (!weights | !biases)
+	{
+		return RNN_ERR_WEIGHTS_UNINITIATED;
+	}
+
 	int yStride = batchSize*yDim;
 	int hStride = batchSize*hDim;
 	// Convert to 0 based
@@ -360,55 +829,58 @@ void SoftmaxLayer<float>::forward_pass(int t, int batchSize)
 
 	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, yDim, batchSize, hDim, 1, weights, yDim, h, hDim, 0, ylin, yDim);
 
-#ifdef USE_OMP
-#pragma omp parallel for
-#endif
 	for (int j = 0; j < batchSize; j++)
 	{
+		/*
 		float* ylin_j = ylin + j*yDim;
 		float* yhat_j = yhat + j*yDim;
 		float* y_j = y + j*yDim;
 		float* loss_j = loss + j;
-#ifdef USE_OMP
-#pragma simd
-#endif
+		*/
+#pragma novector
 		for (int k = 0; k < yDim; k++)
 		{
-			ylin_j[k] += biases[k];
+			ylin[j*yDim + k] += biases[k];
 		}
 
 		float ylin_max = -1e20;
+#pragma novector
 		for (int k = 0; k < yDim; k++)
 		{
-			if (ylin_j[k]>ylin_max)
-				ylin_max = ylin_j[k];
+			if (ylin[j*yDim + k] > ylin_max)
+				ylin_max = ylin[j*yDim + k];
 		}
 
 		float sum_exp_ylin_minus_max = 0;
-#ifdef USE_OMP
-#pragma simd reduction(+:sum_exp_ylin_minus_max)
-#endif
+
+#pragma novector
 		for (int k = 0; k < yDim; k++)
 		{
-			yhat_j[k] = exp(ylin_j[k] - ylin_max);
-			sum_exp_ylin_minus_max += yhat_j[k];
+			yhat[j*yDim + k] = exp((ylin[j*yDim + k] - ylin_max) / temperature);
+			sum_exp_ylin_minus_max += yhat[j*yDim + k];
 		}
 
-		*loss_j = 0;
-#ifdef USE_OMP
-#pragma simd reduction(+:(*loss_j))
-#endif
+		float loss_sum = 0;
+#pragma novector
 		for (int k = 0; k < yDim; k++)
 		{
-			yhat_j[k] /= sum_exp_ylin_minus_max;
-			(*loss_j) += -y_j[k] * log(yhat_j[k]);
+			yhat[j*yDim + k] /= sum_exp_ylin_minus_max;
+			loss_sum += -y[j*yDim + k] * log(yhat[j*yDim + k]);
 		}
+		loss[j] = loss_sum;
 	}
+
+	return 0;
 }
 
 template<>
-void SoftmaxLayer<float>::back_propagation(int t, int batchSize)
+int SoftmaxLayer<float>::back_propagation(int t)
 {
+	if (!dweights | !dbiases)
+	{
+		return RNN_ERR_DWEIGHTS_UNINITIATED;
+	}
+
 	int yStride = batchSize*yDim;
 	int hStride = batchSize*hDim;
 	// Convert to 0 based
@@ -420,9 +892,6 @@ void SoftmaxLayer<float>::back_propagation(int t, int batchSize)
 	float* yhat = yhat_t + tidx*yStride;
 	float* dh = dh_t + tidx*hStride;
 
-#ifdef USE_OMP
-#pragma omp parallel for simd
-#endif
 	for (int k = 0; k < yDim*batchSize; k++)
 	{
 		ylin[k] = yhat[k] - y[k];
@@ -438,4 +907,8 @@ void SoftmaxLayer<float>::back_propagation(int t, int batchSize)
 
 	// dh = dyhat * Wyh;
 	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, batchSize, hDim, yDim, 1, dyhat, batchSize, weights, yDim, 0, dh, batchSize);
+
+	return 0;
 }
+
+#pragma endregion SoftmaxLayer

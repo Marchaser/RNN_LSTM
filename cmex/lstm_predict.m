@@ -1,93 +1,43 @@
-function yhat_out = lstm_predict(xData,params,weights)
+function yhat_out = lstm_predict(xData_t,params,weights)
 %% Hyper parameters
 v2struct(params);
-% Define sigmoid function
-sigmoid = @(x) 1./(1+exp(-x/temperature));
-% Predict one by one
+
+%% For prediction, batchSize=1
 batchSize = 1;
 
 %% Parameters
-[xDim,Ts] = size(xData);
+[xDim,Ts] = size(xData_t);
 
-%% Weights
-v2struct(weights);
-[yDim,~] = size(Wyh);
-yhat_out = zeros(yDim,Ts);
+% Data
+xData_t = single(xData_t);
+yhat_out = zeros(yDim,Ts,'single');
 
-%% Precompute gifo_x
-gifo_x_t = zeros(hDim*4,T+batchSize-1);
-gifo_x_t(:,end-T+2:end) = W_gifo_x * xData(:,1:T-1);
+% Supply constant output data
+yData = zeros(yDim,batchSize,T,'single');
+yhat_t = zeros(yDim,batchSize,T,'single');
+yhat_out = zeros(yDim,Ts,T,'single');
 
-%% Loop for each batch of sample
+MEX_TRAIN = 1;
+MEX_PREDICT = 2;
+MEX_COMPUTE_MEMORY_SIZE = 3;
+MEX_TASK = MEX_PREDICT;
+
 batchStart = 1;
-pNewDataStart = T;
-while batchStart<=Ts
-    batchEnd = batchStart + batchSize-1;
-    pDataEnd = batchEnd+T-1;
-    if pDataEnd>Ts
+while (batchStart <= Ts)
+    for j=1:batchSize
+        batchStartTEnd = batchStart+T-1;
+        if batchStartTEnd > Ts
+            break;
+        end
+        xData(:,j,:) = xData_t(:,batchStart:batchStartTEnd);
+        batchStart = batchStart + 1;
+    end
+    
+    if batchStartTEnd > Ts
         break;
     end
+    lstm_mex;
     
-    %% Compute gifo_x
-    gifo_x_t(:,1:T-1) = gifo_x_t(:,end-T+2:end);
-    gifo_x_t(:,T:end) = W_gifo_x * xData(:,pNewDataStart:pDataEnd);
-    
-    %% Extract x, y
-    x = xData(:,batchStart:pDataEnd);
-    
-    %% Shift pointer
-    batchStart = batchEnd+1;
-    pNewDataStart = pDataEnd+1;
-    
-    % Prepare time series for computation
-    g_t = zeros(hDim,batchSize,T);
-    glin_t = zeros(hDim,batchSize,T);
-    i_t = zeros(hDim,batchSize,T);
-    ilin_t = zeros(hDim,batchSize,T);
-    f_t = zeros(hDim,batchSize,T);
-    flin_t = zeros(hDim,batchSize,T);
-    o_t = zeros(hDim,batchSize,T);
-    olin_t = zeros(hDim,batchSize,T);
-    
-    h_t = zeros(hDim,batchSize,T);
-    s_t = zeros(hDim,batchSize,T);
-    tanhs_t = zeros(hDim,batchSize,T);
-    
-    ylin_t = zeros(yDim,batchSize,T);
-    yhat_t = zeros(yDim,batchSize,T);
-
-    %% Forward pass
-    for t=1:T
-        if t==1
-            % Memory is truncated before time 1
-            hm = zeros(hDim,batchSize,1);
-            sm = zeros(hDim,batchSize,1);
-        else
-            hm = h_t(:,:,t-1);
-            sm = s_t(:,:,t-1);
-        end
-        
-        forward_pass;
-        
-        % Write to time series variable
-        g_t(:,:,t) = g;
-        glin_t(:,:,t) = glin;
-        i_t(:,:,t) = ii;
-        ilin_t(:,:,t) = ilin;
-        f_t(:,:,t) = f;
-        flin_t(:,:,t) = flin;
-        o_t(:,:,t) = o;
-        olin_t(:,:,t) = olin;
-        
-        h_t(:,:,t) = h;
-        s_t(:,:,t) = s;
-        tanhs_t(:,:,t) = tanhs;
-        
-        ylin_t(:,:,t) = ylin;
-        yhat_t(:,:,t) = yhat;
-    end
-    
-    % Write to predicted variable
-    yhat_out(:,pDataEnd) = yhat_t(:,end);
+    yhat_out(:,batchStart-batchSize:batchStart-1,:) = yhat_t;
 end
 end
