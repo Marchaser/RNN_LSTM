@@ -1,77 +1,75 @@
-function [weights,params] = lstm_train(xData_t,yData_t,funcLoss,dfuncLoss,params,weights_hotstart)
+function [weights,params] = lstm_train(xData_t,yData_t,netMexName,params,weights_hotstart)
+%% Clear old parameters
+clear(netMexName);
+lstm_constant;
+
 %% Hyper parameters
 % Default value
-temperature = 1;
-batchSize = 50;
+hDim = 10;
+batchSize = 64;
 learningRate = 0.01;
-T = 10;
-hDim = 100;
 dropOutRate = 0.5;
 NumThreads = 4;
 saveFreq = inf;
+periods = 10;
 
 % RmsProp
 RmsProp_gamma = 0.9;
 
 % Overwrite
-if (nargin>=5)
+if (nargin>=4)
     v2struct(params);
 else
-    params = v2struct(temperature,batchSize,learningRate,T,hDim,NumThreads,saveFreq);
+    params = v2struct(batchSize,learningRate,periods,hDim,NumThreads);
 end
+
+% Convert to single
+learningRate = single(learningRate);
+RmsProp_gamma = single(RmsProp_gamma);
 
 %% Data
 xData_t = single(xData_t);
 yData_t = single(yData_t);
 
 %% Parameters
-[xDim,Ts] = size(xData_t);
+[xDim,lengthData] = size(xData_t);
 [yDim,~] = size(yData_t);
 
 %% Initiate weights
+% Get weights size
+MEX_TASK = MEX_GET_WEIGHTS_SIZE;
+eval(netMexName);
 rng(0729);
-
-% The huge W matrix, satcking g i f o, x h together
-W_gifo_x = rand_init(hDim*4,xDim);
-W_gifo_h = rand_init(hDim*4,hDim);
-b_gifo = rand_init(hDim*4,1);
-Wyh = rand_init(yDim,hDim);
-by = rand_init(yDim,1);
-% Stack all weights together
-weights = [W_gifo_x(:);W_gifo_h(:);b_gifo(:);Wyh(:);by(:)];
-numWeights = numel(weights);
-RmsProp_r = ones(numWeights,1);
+weights = rand_init(sizeWeights,1);
+RmsProp_r = ones(size(weights),'single');
 
 % Overwrite
-if (nargin>=6)
-    v2struct(weights_hotstart);
+if (nargin>=5)
+    if numel(weights_hotstart) == numel(weights)
+        weights = weights_hotstart;
+    else
+        error('weights_hotstart size not correct');
+    end
 end
 
 %% Initiate weights
 dweights_thread = zeros([size(weights) NumThreads],'single');
 
-%% Preallocate space
-MEX_TRAIN=1;
-MEX_COMPUTE_MEMORY_SIZE = 3;
-% MEX_TASK = MEX_COMPUTE_MEMORY_SIZE;
-% batchSize = batchSize/NumThreads;
-% lstm_mex;
-% batchSize = batchSize*NumThreads;
-% memory_thread = zeros(memorySize,NumThreads,'single');
+%% Train
+% Training data
+xData = zeros(xDim,batchSize,periods,'single');
+yData = zeros(yDim,batchSize,periods,'single');
 
 MEX_TASK = MEX_TRAIN;
-timeCount = tic;
-
-xData = zeros(xDim,batchSize,T,'single');
-yData = zeros(yDim,batchSize,T,'single');
 
 batchStart = 1;
 saveCount = 0;
+timeCount = tic;
 
-while (batchStart <= Ts)
+while (batchStart <= lengthData)
     for j=1:batchSize
-        batchStartTEnd = batchStart+T-1;
-        if batchStartTEnd > Ts
+        batchStartTEnd = batchStart+periods-1;
+        if batchStartTEnd > lengthData
             break;
         end
         xData(:,j,:) = xData_t(:,batchStart:batchStartTEnd);
@@ -79,20 +77,27 @@ while (batchStart <= Ts)
         batchStart = batchStart + 1;
     end
     
-    if batchStartTEnd > Ts
+    if batchStartTEnd > lengthData
         break;
     end
-    lstm_mex;
+    
+    eval(netMexName);
     
     % Collapse thread dweights
     dweights = sum(reshape(dweights_thread,[],NumThreads),2);
     dweights = reshape(dweights,size(weights));
     
     % Adjust learning rate
+    %{
     RmsProp_r = (1-RmsProp_gamma)*dweights.^2 + RmsProp_gamma*RmsProp_r;
-    RmsProp_v = learningRate ./ RmsProp_r .* dweights;
+    RmsProp_v = learningRate ./ RmsProp_r;
+    RmsProp_v = min(RmsProp_v,learningRate*5);
+    RmsProp_v = max(RmsProp_v,learningRate/5);
+    RmsProp_v = RmsProp_v.* dweights;
     
     weights = weights - RmsProp_v;
+    %}
+    weights = weights - learningRate*dweights;
     
     saveCount = saveCount + 1;
     

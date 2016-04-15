@@ -14,7 +14,7 @@ tanhs = tanh(s);
 h = tanhs.*o;
 
 % Layer output to final output
-ylin = Wyh*(h.*dropOutDraws) + repmat(by,1,batchSize);
+ylin = Wyh*h + repmat(by,1,batchSize);
 ylin_max = max(ylin,[],1);
 exp_ylin_minus_max = exp(ylin - repmat(ylin_max,yDim,1));
 sum_exp_ylin_minus_max = sum(exp_ylin_minus_max,1);

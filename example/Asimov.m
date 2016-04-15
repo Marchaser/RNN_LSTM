@@ -10,10 +10,10 @@ text_linear_code = dummyvar(text_code)';
 
 %% Train the network
 temperature = 1;
-batchSize = 100;
-learningRate = 0.00005;
-T = 100;
-gDim = 256;
+batchSize = 128;
+learningRate = 0.001;
+periods = 100;
+hDim = 256;
 
 NumThreads = 8;
 %{
@@ -24,16 +24,13 @@ end
 %}
 
 saveFreq = 100;
-params = v2struct(temperature,batchSize,learningRate,T,gDim,NumThreads,saveFreq);
+params = v2struct(temperature,batchSize,learningRate,periods,hDim,NumThreads,saveFreq);
 
 xData = text_linear_code(:,1:end-1);
 yData = text_linear_code(:,2:end);
 
-%% Loss function
-funcLoss = @(y,yhat) -sum( y.*log(yhat), 1 );
-dfuncLoss = @(y,yhat) [yhat - y]';
 
 %% Train
 addpath('../cmex');
-weights = lstm_train(xData,yData,funcLoss,dfuncLoss,params);
+weights = lstm_train(xData,yData,'oneLayerNet',params);
 end

@@ -54,10 +54,6 @@ tanhs_t = zeros(gDim,batchSize,T);
 ylin_t = zeros(yDim,batchSize,T);
 yhat_t = zeros(yDim,batchSize,T);
 
-%% Draw dropouts
-dropOutDraws_all = double(rand(gDim,Ts,T) > dropOutRate);
-dropOutDraws_all(:) = 1;
-
 %% Precompute gifo_x
 gifo_x = zeros(gDim*4,T+batchSize-1);
 gifo_x(:,end-T+2:end) = W_gifo_x * xData(:,1:T-1);
@@ -65,7 +61,6 @@ gifo_x(:,end-T+2:end) = W_gifo_x * xData(:,1:T-1);
 %% Loop for each batch of sample
 batchStart = 1;
 pNewDataStart = T;
-dropOutCount = 1;
 while batchStart<=Ts
     batchEnd = batchStart + batchSize-1;
     pDataEnd = batchEnd+T-1;
@@ -101,11 +96,7 @@ while batchStart<=Ts
     
     ylin_t = zeros(yDim,batchSize,T);
     yhat_t = zeros(yDim,batchSize,T);
-    
-    dropOutDraws_t = dropOutDraws_all(dropOutCount:dropOutCount+gDim*batchSize*T-1);
-    dropOutDraws_t = reshape(dropOutDraws_t,[gDim,batchSize,T]);
-    dropOutCount = dropOutCount+gDim*batchSize*T;
-    
+   
     %% Forward pass
     for t=1:T
         if t==1
@@ -116,8 +107,6 @@ while batchStart<=Ts
             hm = h_t(:,:,t-1);
             sm = s_t(:,:,t-1);
         end
-       
-        dropOutDraws = dropOutDraws_t(:,:,t);
         
         forward_pass;
         
@@ -177,8 +166,6 @@ while batchStart<=Ts
         
         ylin = ylin_t(:,:,t);
         yhat = yhat_t(:,:,t);
-        
-        dropOutDraws = dropOutDraws_t(:,:,t);
         
         backward_prop;
     end

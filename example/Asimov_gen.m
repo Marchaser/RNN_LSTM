@@ -1,31 +1,35 @@
 function Asimov_gen
-weights = load('weights_9900_990000');
+weights = load('weights_7800_998400');
+weights = v2struct(weights);
 
 text = fileread('t8.shakespeare.txt');
 text = text(1:1e6);
 [text_dic,code_text,text_code] = unique(text);
 
 % Initial words
-words = text(1:100);
+words = text(100:1000);
 [~,words_code] = ismember(words,text_dic);
 words_code_linear = zeros(max(text_code),length(words_code));
 words_code_linear(1:max(words_code),:) = dummyvar(words_code)';
 
-temperature = 0.5;
+temperature = 1;
 batchSize = 100;
-learningRate = 0.001;
-T = 100;
-gDim = 256;
+learningRate = 0.01;
+periods = 100;
+hDim = 256;
 
-params = v2struct(temperature,batchSize,learningRate,T,gDim);
+yDim = size(words_code_linear,1);
+NumThreads = 4;
+
+params = v2struct(temperature,batchSize,learningRate,periods,hDim,yDim,NumThreads);
 
 %% Predict
 addpath('../cmex');
 numWordsPredicted = 2e2;
 for j=1:numWordsPredicted
-    xData = words_code_linear(:,end-T+1:end);
-    yhat = lstm_predict(xData,params,weights);
-    [~,iymax] = max(yhat(:,end));
+    xData = words_code_linear(:,end-periods+1:end);
+    yhat = lstm_predict(xData,'oneLayerNet',params,weights);
+    [~,iymax] = max(yhat(:,1,end));
     predict = zeros(size(words_code_linear,1),1);
     predict(iymax) = 1;
     words_code_linear = [words_code_linear predict];

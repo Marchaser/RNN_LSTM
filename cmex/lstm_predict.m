@@ -1,4 +1,8 @@
-function yhat_out = lstm_predict(xData_t,params,weights)
+function yhat_out = lstm_predict(xData_t,netMexName,params,weights)
+%% Clear old parameters
+clear(netMexName);
+lstm_constant;
+
 %% Hyper parameters
 v2struct(params);
 
@@ -6,37 +10,36 @@ v2struct(params);
 batchSize = 1;
 
 %% Parameters
-[xDim,Ts] = size(xData_t);
+[xDim,sizeData] = size(xData_t);
 
 % Data
 xData_t = single(xData_t);
-yhat_out = zeros(yDim,Ts,'single');
+yhat_out = zeros(yDim,sizeData,'single');
 
 % Supply constant output data
-yData = zeros(yDim,batchSize,T,'single');
-yhat_t = zeros(yDim,batchSize,T,'single');
-yhat_out = zeros(yDim,Ts,T,'single');
+yData = zeros(yDim,batchSize,periods,'single');
+yhat_t = zeros(yDim,batchSize,periods,'single');
+yhat_out = zeros(yDim,sizeData,periods,'single');
 
-MEX_TRAIN = 1;
-MEX_PREDICT = 2;
-MEX_COMPUTE_MEMORY_SIZE = 3;
+% Task number
 MEX_TASK = MEX_PREDICT;
 
 batchStart = 1;
-while (batchStart <= Ts)
+while (batchStart <= sizeData)
     for j=1:batchSize
-        batchStartTEnd = batchStart+T-1;
-        if batchStartTEnd > Ts
+        batchStartTEnd = batchStart+periods-1;
+        if batchStartTEnd > sizeData
             break;
         end
         xData(:,j,:) = xData_t(:,batchStart:batchStartTEnd);
         batchStart = batchStart + 1;
     end
     
-    if batchStartTEnd > Ts
+    if batchStartTEnd > sizeData
         break;
     end
-    lstm_mex;
+    
+    eval(netMexName);
     
     yhat_out(:,batchStart-batchSize:batchStart-1,:) = yhat_t;
 end

@@ -34,6 +34,9 @@ public:
 
 	int hasPreallocSpace;
 	int isInit;
+
+	// Static
+	static int compute_size_weights(int xDim, int hDim) { return hDim * 4 * (xDim + hDim + 1); }
 	
 	// Constructor
 	LstmLayer() : xDim(0), hDim(0), periods(0), batchSize(0), gifoDim(0), xhDim(0), memorySize(0), hasPreallocSpace(0), isInit(0) {};
@@ -135,9 +138,34 @@ public:
 	int computeMemorySize();
 	void assign_memory();
 
+	void assign_weights(T** p);
+	void assign_dweights(T** p);
+
 	int forward_pass(int t);
 	int back_propagation(int t);
 };
+
+template<typename T>
+void LstmLayer<T>::assign_weights(T** p)
+{
+	weights_x = *p;
+	*p += gifoDim*xDim;
+	weights_h = *p;
+	*p += gifoDim*hDim;
+	biases = *p;
+	*p += gifoDim;
+}
+
+template<typename T>
+void LstmLayer<T>::assign_dweights(T** p)
+{
+	dweights_x = *p;
+	*p += gifoDim*xDim;
+	dweights_h = *p;
+	*p += gifoDim*hDim;
+	dbiases = *p;
+	*p += gifoDim;
+}
 
 template<typename T>
 int LstmLayer<T>::computeMemorySize()
@@ -631,6 +659,11 @@ public:
 
 	int isInit;
 
+	// Static
+	static int compute_size_weights(int hDim, int yDim) {
+		return yDim*(hDim + 1);
+	}
+
 	// Constructor
 	SoftmaxLayer() : hDim(0), yDim(0), periods(0), batchSize(0), hasPreallocSpace(0), memorySize(0), isInit(0){};
 	SoftmaxLayer(int _hDim, int _yDim, int _periods, int _batchSize, T* _prealloc_space = 0)
@@ -700,6 +733,9 @@ public:
 	void assign_memory();
 	int computeMemorySize();
 
+	void assign_weights(T** p);
+	void assign_dweights(T** p);
+
 	void init_dweights()
 	{
 		memset(dweights, 0, sizeof(T)*hDim*yDim);
@@ -710,6 +746,26 @@ public:
 
 	int back_propagation(int t);
 };
+
+template<typename T>
+void SoftmaxLayer<T>::assign_weights(T** p)
+{
+	weights = *p;
+	*p += yDim*hDim;
+	biases = *p;
+	*p += yDim;
+}
+
+template<typename T>
+void SoftmaxLayer<T>::assign_dweights(T** p)
+{
+	dweights = *p;
+	*p += yDim*hDim;
+	dbiases = *p;
+	*p += yDim;
+}
+
+
 
 template<typename T>
 void SoftmaxLayer<T>::dealloc()

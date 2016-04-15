@@ -7,7 +7,7 @@ function test_simple
 
 %% Generate number
 xData0 = [1 2];
-Ts = 1e5;
+Ts = 1e4;
 for t=1:Ts
     xNext = mod(xData0(end)+xData0(end-1),10);
     xData0 = [xData0 xNext];
@@ -24,31 +24,27 @@ xData = I(:,xData);
 yData = xData(:,2:end);
 xData = xData(:,1:end-1);
 
+%% Loss function
+funcLoss = @(y,yhat) -sum( y.*log(yhat), 1 );
+dfuncLoss = @(y,yhat) [yhat - y]';
+
 %% Some hyper parameters
 temperature = 1;
 batchSize = 64;
 learningRate = 0.01;
-periods = 3; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
-hDim = 20;
-hDim1 = 20;
-hDim2 = 20;
+T = 100; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
+hDim = 128;
 xDim = size(xData,1);
 yDim = size(yData,1);
 NumThreads = 4;
 saveFreq = 50;
-params = v2struct(temperature,batchSize,learningRate,periods,xDim,yDim,hDim,hDim1,hDim2,NumThreads,saveFreq);
+params = v2struct(temperature,batchSize,learningRate,T,xDim,yDim,hDim,NumThreads,saveFreq);
 
 %% Train
-% weights = lstm_train(xData,yData,'oneLayerNet',params);
-weights = lstm_train(xData,yData,'twoLayerNet',params);
+weights = lstm_train(xData,yData,funcLoss,dfuncLoss,params);
 
 %% Predict
-%{
-weights = load('weights');
-v2struct(weights);
-v2struct(weights);
-weights = single([W_gifo_x(:);W_gifo_h(:);b_gifo(:);Wyh(:);by(:)]);
-%}
-% yhat = lstm_predict(xData(:,1:1001),'oneLayerNet',params,weights);
-yhat = lstm_predict(xData(:,1:1001),'twoLayerNet',params,weights);
+yhat = lstm_predict(xData(:,1:1001),params,weights);
+
+yhat(:,:,end)
 end

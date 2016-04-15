@@ -30,14 +30,35 @@ dfuncLoss = @(y,yhat) [yhat - y]';
 
 %% Some hyper parameters
 temperature = 1;
-batchSize = 50;
-learningRate = 0.01;
-T = 10; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
-gDim = 64;
+batchSize = 64;
+learningRate = 0.1;
+T = 3; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
+gDim = 20;
 params = v2struct(temperature,batchSize,learningRate,T,gDim);
 
 %% Train
 weights = lstm_train(xData,yData,funcLoss,dfuncLoss,params);
+
+%% Load
+%{
+weights_other = load('weights_150_9600');
+weights_other = weights_other.weights;
+xDim = 10;
+yDim = 10;
+hDim = gDim;
+W_gifo_x = weights_other(1:xDim*gDim*4);
+W_gifo_h = weights_other(xDim*gDim*4+1:xDim*gDim*4+gDim*gDim*4);
+b_gifo = weights_other(xDim*gDim*4+gDim*gDim*4+1:xDim*gDim*4+gDim*gDim*4+gDim*4);
+Wyh = weights_other(xDim*gDim*4+gDim*gDim*4+gDim*4+1:xDim*gDim*4+gDim*gDim*4+gDim*4+yDim*hDim);
+by = weights_other(xDim*gDim*4+gDim*gDim*4+gDim*4+yDim*hDim+1:xDim*gDim*4+gDim*gDim*4+gDim*4+yDim*hDim+yDim);
+W_gifo_x = reshape(W_gifo_x,gDim*4,xDim);
+W_gifo_h = reshape(W_gifo_h,gDim*4,gDim);
+b_gifo = reshape(b_gifo,gDim*4,1);
+Wyh = reshape(Wyh,yDim,hDim);
+by = reshape(by,yDim,1);
+weights = v2struct(W_gifo_x,W_gifo_h,b_gifo,Wyh,by);
+%}
+
 
 %% Predict
 yhat = lstm_predict(xData(:,1:21),params,weights);

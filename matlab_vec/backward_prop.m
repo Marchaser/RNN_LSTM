@@ -1,9 +1,9 @@
 % Backward propagation for one time step
 % Back through time
 dyhat = dfuncLoss(y(:,t:t+batchSize-1),yhat);
-dWyh = dWyh + dyhat'*(h.*dropOutDraws)';
+dWyh = dWyh + dyhat'*h';
 dby = dby + sum(dyhat,1)';
-dLdh = dhm + (dyhat * Wyh).*dropOutDraws' ;
+dLdh = dhm + dyhat * Wyh ;
 dLpds = dsm;
 
 % Within time step
