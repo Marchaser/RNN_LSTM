@@ -32,7 +32,7 @@ void my_function_to_handle_aborts(int signal_number)
 
 void TRAIN();
 void PREDICT();
-void GET_WEIGHTS_SIZE();
+void INIT();
 
 
 using namespace MatlabMatrix;
@@ -73,7 +73,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
 	if (MEX_TASK == MEX_GET_WEIGHTS_SIZE)
 	{
-		GET_WEIGHTS_SIZE();
+		INIT();
 		return;
 	}
 
@@ -91,7 +91,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 	}
 }
 
-void GET_WEIGHTS_SIZE()
+void INIT()
 {
 	GET_INT(xDim);
 	GET_INT(hDim);

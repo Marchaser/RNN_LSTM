@@ -1,5 +1,5 @@
 % Define constant
-MEX_GET_WEIGHTS_SIZE = 0;
+MEX_INIT = 0;
 MEX_TRAIN=1;
 MEX_PREDICT = 2;
 MEX_PRE_TREAT = 3;

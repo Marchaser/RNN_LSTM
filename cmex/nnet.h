@@ -54,6 +54,7 @@ public:
 	int gifoDim;
 
 	int batchSize;
+	int sizeWeights;
 
 	// Static
 	static int compute_size_weights(int xDim, int hDim) { return hDim * 4 * (xDim + hDim + 1); }
@@ -67,6 +68,9 @@ public:
 
 		xhDim = xDim + hDim;
 		gifoDim = hDim * 4;
+
+		sizeWeights = compute_size_weights(xDim, hDim);
+
 		alloc();
 		// Set constant
 		for (int j = 0; j < batchSize; j++)
@@ -503,13 +507,12 @@ int LstmLayer<float>::back_propagation(int t)
 
 template <typename T>
 class SoftmaxLayer : public RnnLayer {
-private:
-	T* memory;
-
 public:
 	int hDim;
 	int yDim;
 	int batchSize;
+
+	int sizeWeights;
 
 	T temperature;
 
@@ -524,6 +527,8 @@ public:
 	{
 		periods = _periods;
 		batchSize = _batchSize;
+
+		sizeWeights = compute_size_weights(hDim, yDim);
 
 		alloc();
 		// Assign constant
@@ -751,7 +756,7 @@ public:
 	double dropoutRate;
 	int seed;
 
-	DropoutLayer(int _hDim, int _periods, int _batchSize, int _seed = 823, int _dropoutRate = 0.5)
+	DropoutLayer(int _hDim, int _periods, int _batchSize, int _seed = 823, double _dropoutRate = 0.5)
 		: hDim(_hDim), seed(_seed), dropoutRate(_dropoutRate)
 	{
 		periods = _periods;

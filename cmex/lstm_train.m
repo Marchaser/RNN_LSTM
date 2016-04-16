@@ -1,17 +1,19 @@
 function [weights,params] = lstm_train(xData_t,yData_t,netMexName,params,weights_hotstart)
 %% Clear old parameters
-clear(netMexName);
 lstm_constant;
 
 %% Hyper parameters
 % Default value
-hDim = 10;
+xDim = 10;
+yDim = 10;
+nLayer = 1;
+hDims = 10;
+periods = 10;
 batchSize = 64;
 learningRate = 0.01;
-dropOutRate = 0.5;
+dropoutRate = 0.5;
 NumThreads = 4;
 saveFreq = inf;
-periods = 10;
 
 % RmsProp
 RmsProp_gamma = 0.9;
@@ -20,33 +22,37 @@ RmsProp_gamma = 0.9;
 if (nargin>=4)
     v2struct(params);
 else
-    params = v2struct(batchSize,learningRate,periods,hDim,NumThreads);
+    params = v2struct(xDim,yDim,nLayer,hDims,periods,batchSize,learningRate,dropoutRate,NumThreads);
 end
 
-% Convert to single
+%% Convert data type
+hDims = int32(hDims);
 learningRate = single(learningRate);
 RmsProp_gamma = single(RmsProp_gamma);
-
-%% Check parameters
-if mod(batchSize,NumThreads)~=0
-    error('batchSize cannot be divided by NumThreads');
-end
-batchSizeThread = batchSize / NumThreads;
-
-%% Data
 xData_t = single(xData_t);
 yData_t = single(yData_t);
 
-%% Parameters
-[xDim,lengthData] = size(xData_t);
-[yDim,~] = size(yData_t);
+%% Check consistent of parameters
+assert(mod(batchSize,NumThreads)==0)
+assert(size(xData_t,1)==xDim);
+assert(size(yData_t,1)==yDim);
+assert(size(xData_t,2)==size(yData_t,2));
+assert(length(hDims)==nLayer);
 
-%% Initiate weights
-% Get weights size
-MEX_TASK = MEX_GET_WEIGHTS_SIZE;
+%% Induced parameters
+batchSizeThread = batchSize / NumThreads;
+% Sequence data, take out the amount of periods
+lengthData = size(xData_t,2) - periods+1;
+
+%% Initiate networks
+MEX_TASK = MEX_INIT;
 eval(netMexName);
+
+% sizeWeights will be returned by MEX
+% Init weights
 rng(0729);
 weights = rand_init(sizeWeights,1);
+dweights_thread = zeros([size(weights) NumThreads],'single');
 RmsProp_r = ones(size(weights),'single');
 
 % Overwrite
@@ -62,29 +68,27 @@ end
 MEX_TASK = MEX_PRE_TREAT;
 eval(netMexName);
 
-%% Initiate weights
-dweights_thread = zeros([size(weights) NumThreads],'single');
-
 %% Prepare space for thread data
 % Split training data based on batchSize
 lengthDataBatch = floor(lengthData/batchSize);
 batchDataStride = 1:lengthDataBatch:lengthDataBatch*batchSize;
 % 0 based
 batchDataStride = batchDataStride - 1;
+% Space for loss
+loss_thread = zeros(periods,batchSizeThread,NumThreads,'single');
 
 %% Train
 MEX_TASK = MEX_TRAIN;
-
-batchStartThread = 1;
 saveCount = 0;
 timeCount = tic;
-
 for currentBatch=1:lengthDataBatch
     
     eval(netMexName);
     
     % Collapse thread dweights
-    dweights = sum(reshape(dweights_thread,[],NumThreads),2);
+    dweights = reshape(dweights_thread,[],NumThreads);
+    % Sum over training set
+    dweights = sum(dweights(:,1:end-1),2);
     dweights = reshape(dweights,size(weights));
     
     % Adjust learning rate
@@ -94,10 +98,11 @@ for currentBatch=1:lengthDataBatch
     RmsProp_v = max(RmsProp_v,learningRate/5);
     RmsProp_v = RmsProp_v.* dweights;
     
+    %  Learn
     weights = weights - RmsProp_v;
     
+    % Output
     saveCount = saveCount + 1;
-    
     if mod(saveCount,saveFreq)==0
         output_func;
     end

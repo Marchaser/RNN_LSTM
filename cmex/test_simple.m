@@ -25,30 +25,23 @@ yData = xData(:,2:end);
 xData = xData(:,1:end-1);
 
 %% Some hyper parameters
-temperature = 1;
-batchSize = 64;
-learningRate = 0.01;
-periods = 3; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
-hDim = 20;
-hDim1 = 20;
-hDim2 = 20;
 xDim = size(xData,1);
 yDim = size(yData,1);
+batchSize = 64;
+periods = 3; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
+nLayer = 2;
+hDims = [20 10];
+learningRate = 0.01;
+dropoutRate = 0.1;
 NumThreads = 4;
 saveFreq = 500;
-params = v2struct(temperature,batchSize,learningRate,periods,xDim,yDim,hDim,hDim1,hDim2,NumThreads,saveFreq);
+params = v2struct(xDim,yDim,nLayer,hDims,periods,batchSize,learningRate,dropoutRate,NumThreads,saveFreq);
 
 %% Train
-% weights = lstm_train(xData,yData,'oneLayerNet',params);
-weights = lstm_train(xData,yData,'twoLayerNet',params);
+clear lstmNet;
+weights = lstm_train(xData,yData,'lstmNet',params);
 
 %% Predict
-%{
-weights = load('weights');
-v2struct(weights);
-v2struct(weights);
-weights = single([W_gifo_x(:);W_gifo_h(:);b_gifo(:);Wyh(:);by(:)]);
-%}
-% yhat = lstm_predict(xData(:,1:1001),'oneLayerNet',params,weights);
-yhat = lstm_predict(xData(:,1:1001),'twoLayerNet',params,weights);
+clear lstmNet;
+yhat = lstm_predict(xData(:,1:1001),'lstmNet',params,weights);
 end

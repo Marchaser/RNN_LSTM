@@ -7,9 +7,16 @@ v2struct(params);
 
 %% For prediction, batchSize=1
 batchSize = 1;
+batchSizeThread = 1;
 
 %% Parameters
 [xDim,sizeData] = size(xData_t);
+
+%% Check consistent of parameters
+assert(length(hDims)==nLayer);
+
+%% Conver types
+hDims = int32(hDims);
 
 % Data
 xData_t = single(xData_t);
@@ -20,7 +27,11 @@ yData = zeros(yDim,batchSize,periods,'single');
 yhat_t = zeros(yDim,batchSize,periods,'single');
 yhat_out = zeros(yDim,sizeData,periods,'single');
 
-% Task number
+%% Initiate networks
+MEX_TASK = MEX_INIT;
+eval(netMexName);
+
+%% Prediction
 MEX_TASK = MEX_PREDICT;
 
 batchStart = 1;
