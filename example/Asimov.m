@@ -16,7 +16,7 @@ nLayer = 2;
 hDims = [256 256];
 batchSize = 64;
 periods = 100;
-learningRate = 5e-4;
+learningRate = 1e-3;
 dropOutRate = 0.5;
 
 saveFreq = 100;

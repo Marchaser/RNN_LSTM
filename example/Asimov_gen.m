@@ -1,5 +1,5 @@
 function Asimov_gen
-weights = load('weights_6400_409600');
+weights = load('weights_2000_128000_323.4194_320.7245.mat');
 weights = v2struct(weights);
 
 text = fileread('Foundation - Isaac Asimov.txt');

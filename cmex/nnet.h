@@ -831,7 +831,9 @@ int DropoutLayer<T>::back_propagation(int t)
 	{
 		for (int k = 0; k < batchSize ; k++)
 		{
-			if (!D[j*batchSize + k])
+			// Recall size of D is [hDim, batchSize]
+			// Size of dh is [batchSize, hDim]
+			if (!D[k*hDim + j])
 				dh[j*batchSize + k] = 0;
 		}
 	}

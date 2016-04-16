@@ -15,6 +15,8 @@ dropoutRate = 0.5;
 NumThreads = 4;
 saveFreq = inf;
 
+learningRateDecay = 0.95;
+
 % RmsProp
 RmsProp_gamma = 0.9;
 
@@ -81,6 +83,7 @@ loss_thread = zeros(periods,batchSizeThread,NumThreads,'single');
 MEX_TASK = MEX_TRAIN;
 saveCount = 0;
 timeCount = tic;
+last_loss_training = inf;
 for currentBatch=1:lengthDataBatch
     
     eval(netMexName);
