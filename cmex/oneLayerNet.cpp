@@ -40,17 +40,17 @@ using namespace MatlabMatrix;
 
 // Some variable to persist between calls
 // Space, thread specific
-LstmLayer<float>* lstmLayer1_thread[MAX_THREAD];
-SoftmaxLayer<float>* softmaxLayer_thread[MAX_THREAD];
+LstmLayer<float>* lstm1_thread[MAX_THREAD];
+SoftmaxLayer<float>* softmax_thread[MAX_THREAD];
 
 void ExitFcn()
 {
 	for (int j = 0; j < MAX_THREAD ; j++)
 	{
-		if (lstmLayer1_thread[j] != 0)
-			delete lstmLayer1_thread[j];
-		if (softmaxLayer_thread[j] != 0)
-			delete softmaxLayer_thread[j];
+		if (lstm1_thread[j] != 0)
+			delete lstm1_thread[j];
+		if (softmax_thread[j] != 0)
+			delete softmax_thread[j];
 	}
 
 }
@@ -181,22 +181,22 @@ void TRAIN()
 #endif
 	for (int thread_id = 0; thread_id < NumThreads ; thread_id++)
 	{
-		if (lstmLayer1_thread[thread_id] == 0)
-			lstmLayer1_thread[thread_id] = new LstmLayer<float>(xDim, hDim, periods, batchSize);
-		if (softmaxLayer_thread[thread_id] == 0)
-			softmaxLayer_thread[thread_id] = new SoftmaxLayer<float>(hDim, yDim, periods, batchSize);
+		if (lstm1_thread[thread_id] == 0)
+			lstm1_thread[thread_id] = new LstmLayer<float>(xDim, hDim, periods, batchSize);
+		if (softmax_thread[thread_id] == 0)
+			softmax_thread[thread_id] = new SoftmaxLayer<float>(hDim, yDim, periods, batchSize);
 
 		// Assign space to network
 		// weights
 		float* ptr;
 		ptr = _weights;
-		lstmLayer1_thread[thread_id]->assign_weights(&ptr);
-		softmaxLayer_thread[thread_id]->assign_weights(&ptr);
+		lstm1_thread[thread_id]->assign_weights(&ptr);
+		softmax_thread[thread_id]->assign_weights(&ptr);
 
 		// dweights
 		ptr = _dweights_thread + weights.numElements()*thread_id;
-		lstmLayer1_thread[thread_id]->assign_dweights(&ptr);
-		softmaxLayer_thread[thread_id]->assign_dweights(&ptr);
+		lstm1_thread[thread_id]->assign_dweights(&ptr);
+		softmax_thread[thread_id]->assign_dweights(&ptr);
 	}
 
 #ifdef USE_OMP
@@ -205,8 +205,8 @@ void TRAIN()
 	for (int thread_id = 0; thread_id < NumThreads; thread_id++)
 	{
 		// Get thread local network
-		LstmLayer<float>* lstmLayer1 = lstmLayer1_thread[thread_id];
-		SoftmaxLayer<float>* softmaxLayer = softmaxLayer_thread[thread_id];
+		LstmLayer<float>* lstmLayer1 = lstm1_thread[thread_id];
+		SoftmaxLayer<float>* softmaxLayer = softmax_thread[thread_id];
 
 		// Copy data
 		for (int t = 0; t < periods ; t++)

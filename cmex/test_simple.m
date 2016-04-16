@@ -35,7 +35,7 @@ hDim2 = 20;
 xDim = size(xData,1);
 yDim = size(yData,1);
 NumThreads = 4;
-saveFreq = 50;
+saveFreq = 500;
 params = v2struct(temperature,batchSize,learningRate,periods,xDim,yDim,hDim,hDim1,hDim2,NumThreads,saveFreq);
 
 %% Train

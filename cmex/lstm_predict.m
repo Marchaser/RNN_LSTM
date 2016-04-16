@@ -1,6 +1,5 @@
 function yhat_out = lstm_predict(xData_t,netMexName,params,weights)
 %% Clear old parameters
-clear(netMexName);
 lstm_constant;
 
 %% Hyper parameters

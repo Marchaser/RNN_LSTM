@@ -1,0 +1,7 @@
+MKLROOT = /export/apps/intel/mkl
+MATLABROOT = /share/apps/matlab/R2014b
+all:
+	icpc lstm_mex.cpp -O3 -DUSE_OMP -Wl,--start-group /export/apps/intel/mkl/lib/intel64/libmkl_intel_lp64.a /export/apps/intel/mkl/lib/intel64/libmkl_core.a /export/apps/intel/mkl/lib/intel64/libmkl_intel_thread.a -Wl,--end-group -lpthread -lm -ldl -o lstm_mex.mexa64 -I"/home/wl239/CRoutines" -I$(MATLABROOT)/extern/include -I$(MATLABROOT)/simulink/include -DMATLAB_MEX_FILE -ansi -D_GNU_SOURCE -fexceptions -fPIC -fno-omit-frame-pointer -pthread -shared -m64 -DNOCHECK -DMX_COMPAT_32 -DNDEBUG -Wl,--version-script,$(MATLABROOT)/extern/lib/glnxa64/mexFunction.map -Wl,--no-undefined -Wl,-rpath-link,$(MATLABROOT)/bin/glnxa64 -L$(MATLABROOT)/bin/glnxa64 -lmx -ldl -lmex -lmat -lstdc++ -qopenmp -fp-model precise -fp-model source
+
+
+

@@ -27,6 +27,12 @@ end
 learningRate = single(learningRate);
 RmsProp_gamma = single(RmsProp_gamma);
 
+%% Check parameters
+if mod(batchSize,NumThreads)~=0
+    error('batchSize cannot be divided by NumThreads');
+end
+batchSizeThread = batchSize / NumThreads;
+
 %% Data
 xData_t = single(xData_t);
 yData_t = single(yData_t);
@@ -52,34 +58,28 @@ if (nargin>=5)
     end
 end
 
+%% Pre treatment
+MEX_TASK = MEX_PRE_TREAT;
+eval(netMexName);
+
 %% Initiate weights
 dweights_thread = zeros([size(weights) NumThreads],'single');
 
-%% Train
-% Training data
-xData = zeros(xDim,batchSize,periods,'single');
-yData = zeros(yDim,batchSize,periods,'single');
+%% Prepare space for thread data
+% Split training data based on batchSize
+lengthDataBatch = floor(lengthData/batchSize);
+batchDataStride = 1:lengthDataBatch:lengthDataBatch*batchSize;
+% 0 based
+batchDataStride = batchDataStride - 1;
 
+%% Train
 MEX_TASK = MEX_TRAIN;
 
-batchStart = 1;
+batchStartThread = 1;
 saveCount = 0;
 timeCount = tic;
 
-while (batchStart <= lengthData)
-    for j=1:batchSize
-        batchStartTEnd = batchStart+periods-1;
-        if batchStartTEnd > lengthData
-            break;
-        end
-        xData(:,j,:) = xData_t(:,batchStart:batchStartTEnd);
-        yData(:,j,:) = yData_t(:,batchStart:batchStartTEnd);
-        batchStart = batchStart + 1;
-    end
-    
-    if batchStartTEnd > lengthData
-        break;
-    end
+for currentBatch=1:lengthDataBatch
     
     eval(netMexName);
     
@@ -88,7 +88,6 @@ while (batchStart <= lengthData)
     dweights = reshape(dweights,size(weights));
     
     % Adjust learning rate
-    %{
     RmsProp_r = (1-RmsProp_gamma)*dweights.^2 + RmsProp_gamma*RmsProp_r;
     RmsProp_v = learningRate ./ RmsProp_r;
     RmsProp_v = min(RmsProp_v,learningRate*5);
@@ -96,14 +95,14 @@ while (batchStart <= lengthData)
     RmsProp_v = RmsProp_v.* dweights;
     
     weights = weights - RmsProp_v;
-    %}
-    weights = weights - learningRate*dweights;
     
     saveCount = saveCount + 1;
     
     if mod(saveCount,saveFreq)==0
         output_func;
     end
+    
+    batchDataStride = batchDataStride + 1;
 end
 end
 

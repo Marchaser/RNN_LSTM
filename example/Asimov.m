@@ -10,10 +10,12 @@ text_linear_code = dummyvar(text_code)';
 
 %% Train the network
 temperature = 1;
-batchSize = 128;
-learningRate = 0.001;
+batchSize = 64;
+learningRate = 5e-4;
 periods = 100;
 hDim = 256;
+hDim1 = 256;
+hDim2 = 256;
 
 NumThreads = 8;
 %{
@@ -24,7 +26,7 @@ end
 %}
 
 saveFreq = 100;
-params = v2struct(temperature,batchSize,learningRate,periods,hDim,NumThreads,saveFreq);
+params = v2struct(temperature,batchSize,learningRate,periods,hDim,hDim1,hDim2,NumThreads,saveFreq);
 
 xData = text_linear_code(:,1:end-1);
 yData = text_linear_code(:,2:end);
@@ -32,5 +34,6 @@ yData = text_linear_code(:,2:end);
 
 %% Train
 addpath('../cmex');
-weights = lstm_train(xData,yData,'oneLayerNet',params);
+% weights = lstm_train(xData,yData,'oneLayerNet',params);
+weights = lstm_train(xData,yData,'twoLayerNet',params);
 end
