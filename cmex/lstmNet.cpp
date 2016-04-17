@@ -9,7 +9,18 @@
 #include "math.h"
 #include "MatlabMatrix.h"
 #include <string.h>
+
+#ifndef TYPENAME
+#define TYPENAME double
+#endif
+
 #include "nnet.h"
+
+#if TYPENAME==double
+#define GET_V_VIEW GET_DV_VIEW
+#elif TYPENAME==float
+#define GET_V_VIEW GET_FV_VIEW
+#endif
 
 #define MAX_LAYER 4
 #define MAX_THREAD 8
@@ -31,20 +42,21 @@ void my_function_to_handle_aborts(int signal_number)
 
 #define CRRA(c) ( pow((c),1-Sigma)/(1-Sigma) )
 
+void ALLOC();
+void NNET_INFO();
 void TRAIN();
 void PREDICT();
 void INIT();
 void PRE_TREAT();
-void CONSTRUCT_LAYERS(int xDim, int nLayer, int* hDims, int yDim, int periods, int batchSize);
 
 using namespace MatlabMatrix;
 
 
 // Some variable to persist between calls
 // Space, thread specific
-LstmLayer<float>* lstm_thread[MAX_LAYER][MAX_THREAD];
-DropoutLayer<float>* dropout_thread[MAX_LAYER][MAX_THREAD];
-SoftmaxLayer<float>* softmax_thread[MAX_THREAD];
+LstmLayer<TYPENAME>* lstm_thread[MAX_LAYER][MAX_THREAD];
+DropoutLayer<TYPENAME>* dropout_thread[MAX_LAYER][MAX_THREAD];
+SoftmaxLayer<TYPENAME>* softmax_thread[MAX_THREAD];
 
 void ExitFcn()
 {
@@ -72,12 +84,27 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
 	mkl_set_num_threads(1);
 
+	// Allocate space only once
+	static int isAlloc = 0;
+	if (isAlloc == 0)
+	{
+		ALLOC();
+		isAlloc = 1;
+	}
+
 	// Get task number
 	GET_INT(MEX_TASK);
+	GET_INT(MEX_NNET_INFO);
 	GET_INT(MEX_INIT);
 	GET_INT(MEX_PRE_TREAT);
 	GET_INT(MEX_TRAIN);
 	GET_INT(MEX_PREDICT);
+
+	if (MEX_TASK == MEX_NNET_INFO)
+	{
+		NNET_INFO();
+		return;
+	}
 
 	if (MEX_TASK == MEX_INIT)
 	{
@@ -104,28 +131,62 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 	}
 }
 
-void CONSTRUCT_LAYERS(int xDim, int nLayer, int* hDims, int yDim, int periods, int batchSizeThread, int NumThreads)
+void NNET_INFO()
 {
+	GET_INT(nLayer);
+
+	// Put relevant nnet info to workspace
+	int sizeWeights = 0;
+	for (int i = 0; i < nLayer; i++)
+	{
+		sizeWeights += lstm_thread[i][0]->sizeWeights;
+	}
+	sizeWeights += softmax_thread[0]->sizeWeights;
+
+	PUT_SCALAR(sizeWeights);
+}
+
+void ALLOC()
+{
+	GET_INT(xDim);
+	GET_IV_VIEW(hDims);
+	GET_INT(yDim);
+	GET_INT(periods);
+	GET_INT(nLayer);
+	GET_INT(batchSizeThread);
+	GET_INT(NumThreads);
+	GET_DBL(dropoutRate);
+	GET_INT(dropoutSeed);
+
+	if (nLayer > MAX_LAYER)
+	{
+		mexErrMsgTxt("nLayer > MAX_LAYER, recompile with redefining MAX_LAYER");
+	}
+
+	if (NumThreads > MAX_THREAD)
+	{
+		mexErrMsgTxt("NumThreads > MAX_THREAD, recompile with redefining MAX_THREAD");
+	}
+
 	for (int thread_id = 0; thread_id < NumThreads; thread_id++)
 	{
 		// First Layer
 		if (lstm_thread[0][thread_id] == 0)
-			lstm_thread[0][thread_id] = new LstmLayer<float>(xDim, hDims[0], periods, batchSizeThread);
+			lstm_thread[0][thread_id] = new LstmLayer<TYPENAME>(xDim, _hDims[0], periods, batchSizeThread);
 		if (dropout_thread[0][thread_id] == 0)
-			dropout_thread[0][thread_id] = new DropoutLayer<float>(hDims[0], periods, batchSizeThread);
+			dropout_thread[0][thread_id] = new DropoutLayer<TYPENAME>(_hDims[0], periods, batchSizeThread);
 		// All future Layers
 		for (int i = 1; i < nLayer; i++)
 		{
 			if (lstm_thread[i][thread_id] == 0)
-				lstm_thread[i][thread_id] = new LstmLayer<float>(hDims[i - 1], hDims[i], periods, batchSizeThread);
+				lstm_thread[i][thread_id] = new LstmLayer<TYPENAME>(_hDims[i - 1], _hDims[i], periods, batchSizeThread);
 			if (dropout_thread[i][thread_id] == 0)
-				dropout_thread[i][thread_id] = new DropoutLayer<float>(hDims[i], periods, batchSizeThread);
+				dropout_thread[i][thread_id] = new DropoutLayer<TYPENAME>(_hDims[i], periods, batchSizeThread);
 		}
 		// Last Layer
 		if (softmax_thread[thread_id] == 0)
-			softmax_thread[thread_id] = new SoftmaxLayer<float>(hDims[nLayer-1], yDim, periods, batchSizeThread);
+			softmax_thread[thread_id] = new SoftmaxLayer<TYPENAME>(_hDims[nLayer-1], yDim, periods, batchSizeThread);
 	}
-
 }
 
 void PRE_TREAT()
@@ -137,18 +198,18 @@ void PRE_TREAT()
 	GET_INT(periods);
 	GET_INT(batchSizeThread);
 
-	GET_FV_VIEW(weights);
+	GET_V_VIEW(weights);
 
 
 	// Assign space to network
-	float* ptr = _weights;
+	TYPENAME* ptr = _weights;
 
 	for (int i = 0; i < nLayer ; i++)
 	{
 		lstm_thread[i][0]->assign_weights(&ptr);
 
 		// Encourage memory at the beginning
-		float* ptr_f_biases = lstm_thread[i][0]->get_f_biases();
+		TYPENAME* ptr_f_biases = lstm_thread[i][0]->get_f_biases();
 		for (int j = 0; j < _hDims[i]; j++)
 		{
 			ptr_f_biases[j] = 1;
@@ -160,36 +221,23 @@ void PRE_TREAT()
 void INIT()
 {
 	// This function should allocate space for layers, and return size of weights
-	GET_INT(xDim);
-	GET_IV_VIEW(hDims);
-	GET_INT(yDim);
-	GET_INT(periods);
 	GET_INT(nLayer);
-	GET_INT(batchSizeThread);
 	GET_INT(NumThreads);
+	GET_DBL(dropoutRate);
+	GET_INT(dropoutSeed);
 
-	// Error check
-	if (nLayer > MAX_LAYER)
+	// Initiate something
+	for (int thread_id = 0; thread_id < NumThreads; thread_id++)
 	{
-		mexErrMsgTxt("nLayer > MAX_LAYER, recompile with redefining MAX_LAYER");
+		for (int i = 0; i < nLayer; i++)
+		{
+			// Information is truncated
+			lstm_thread[i][thread_id]->clear_info();
+			// initiate dropout
+			dropout_thread[i][thread_id]->seed = dropoutSeed + i + thread_id;
+			dropout_thread[i][thread_id]->dropoutRate = dropoutRate;
+		}
 	}
-
-	if (NumThreads > MAX_THREAD)
-	{
-		mexErrMsgTxt("NumThreads > MAX_THREAD, recompile with redefining MAX_THREAD");
-	}
-
-	// Construct network
-	CONSTRUCT_LAYERS(xDim, nLayer, _hDims, yDim, periods, batchSizeThread, NumThreads);
-
-	int sizeWeights = 0;
-	for (int i = 0; i < nLayer ; i++)
-	{
-		sizeWeights += lstm_thread[i][0]->sizeWeights;
-	}
-	sizeWeights += softmax_thread[0]->sizeWeights;
-
-	PUT_SCALAR(sizeWeights);
 }
 
 void PREDICT()
@@ -202,27 +250,28 @@ void PREDICT()
 	GET_IV_VIEW(hDims);
 	GET_INT(yDim);
 	GET_INT(NumThreads);
+	GET_SGL(dropoutRate);
 
 	// Output
-	GET_FV(yhat_t);
+	GET_V_VIEW(yhat_t);
 
 	// Get Data
-	GET_FV_VIEW(xData);
-	GET_FV_VIEW(yData);
-	GET_FV_VIEW(weights);
+	GET_V_VIEW(xData);
+	GET_V_VIEW(yData);
+	GET_V_VIEW(weights);
 
 	// Thread level layer
-	LstmLayer<float>* lstm[MAX_LAYER];
+	LstmLayer<TYPENAME>* lstm[MAX_LAYER];
 	for (int i = 0; i < nLayer ; i++)
 	{
 		lstm[i] = lstm_thread[i][0];
 	}
-	SoftmaxLayer<float>* softmax = softmax_thread[0];
+	SoftmaxLayer<TYPENAME>* softmax = softmax_thread[0];
 
 	// Networks for evaluation
 
 	// Assign space to network
-	float* ptr = _weights;
+	TYPENAME* ptr = _weights;
 	for (int i = 0; i < nLayer ; i++)
 	{
 		lstm[i]->assign_weights(&ptr);
@@ -230,8 +279,8 @@ void PREDICT()
 	softmax->assign_weights(&ptr);
 
 	// Copy data
-	memcpy(lstm[0]->x_t, _xData, sizeof(float)*xDim*batchSize*periods);
-	memcpy(softmax->y_t, _yData, sizeof(float)*yDim*batchSize*periods);
+	lstm[0]->fetch_from_bottom(_xData);
+	softmax->fetch_from_top(_yData);
 
 	int status;
 	// Forward
@@ -240,11 +289,11 @@ void PREDICT()
 	// Future Layer
 	for (int i = 1; i < nLayer ; i++)
 	{
-		memcpy(lstm[i]->x_t, lstm[i - 1]->h_t, sizeof(float)*_hDims[i - 1] * batchSize*periods);
+		lstm[i]->fetch_from_bottom_with_dropout(lstm[i - 1]->h_t, dropoutRate);
 		lstm[i]->forward_pass_T();
 	}
 	// Last Layer to Softmax
-	memcpy(softmax->h_t, lstm[nLayer - 1]->h_t, sizeof(float)*_hDims[nLayer - 1] * batchSize*periods);
+	softmax->fetch_from_bottom_with_dropout(lstm[nLayer - 1]->h_t, dropoutRate);
 	softmax->forward_pass_T();
 
 	// Store information
@@ -255,8 +304,7 @@ void PREDICT()
 	}
 
 	// Copy to output
-	memcpy(_yhat_t, softmax->yhat_t, sizeof(float)*yDim*batchSize*periods);
-	PUT(yhat_t);
+	memcpy(_yhat_t, softmax->yhat_t, sizeof(TYPENAME)*yDim*batchSize*periods);
 }
 
 void TRAIN()
@@ -271,20 +319,21 @@ void TRAIN()
 	GET_INT(NumThreads);
 	GET_INT(sizeWeights);
 	GET_DBL(dropoutRate);
+	GET_INT(dropoutSeed);
 
 	// Get Data
 	GET_DV_VIEW(batchDataStride);
-	GET_FV_VIEW(xData_t);
-	GET_FV_VIEW(yData_t);
+	GET_V_VIEW(xData_t);
+	GET_V_VIEW(yData_t);
 
 	// Get input
-	GET_FV_VIEW(weights);
+	GET_V_VIEW(weights);
 
 	// Get derivative
-	GET_FV_VIEW(dweights_thread);
+	GET_V_VIEW(dweights_thread);
 
 	// Get loss function
-	GET_FV_VIEW(loss_thread);
+	GET_V_VIEW(loss_thread);
 
 #ifdef USE_OMP
 	omp_set_num_threads(NumThreads);
@@ -296,24 +345,23 @@ void TRAIN()
 	for (int thread_id = 0; thread_id < NumThreads; thread_id++)
 	{
 		// Get thread local network
-		LstmLayer<float>* lstm[MAX_LAYER];
-		DropoutLayer<float>* dropout[MAX_LAYER];
-		float* ptr_weights = _weights;
-		float* ptr_dweights = _dweights_thread + sizeWeights*thread_id;
+		LstmLayer<TYPENAME>* lstm[MAX_LAYER];
+		DropoutLayer<TYPENAME>* dropout[MAX_LAYER];
+		TYPENAME* ptr_weights = _weights;
+		TYPENAME* ptr_dweights = _dweights_thread + sizeWeights*thread_id;
 		for (int i = 0; i < nLayer; i++)
 		{
 			lstm[i] = lstm_thread[i][thread_id];
 			dropout[i] = dropout_thread[i][thread_id];
 			lstm[i]->assign_weights(&ptr_weights);
 			lstm[i]->assign_dweights(&ptr_dweights);
-			dropout[i]->dropoutRate = dropoutRate;
 		}
-		SoftmaxLayer<float>* softmax = softmax_thread[thread_id];
+		SoftmaxLayer<TYPENAME>* softmax = softmax_thread[thread_id];
 		softmax->assign_weights(&ptr_weights);
 		softmax->assign_dweights(&ptr_dweights);
 
 		// Get thread local output
-		float* loss = _loss_thread + thread_id*periods*batchSizeThread;
+		TYPENAME* loss = _loss_thread + thread_id*periods*batchSizeThread;
 
 		// Copy data
 		for (int j = 0; j < batchSizeThread; j++)
@@ -321,8 +369,8 @@ void TRAIN()
 			int startingPos = (int)_batchDataStride[thread_id*batchSizeThread + j];
 			for (int t = 0; t < periods; t++)
 			{
-				memcpy(lstm[0]->x_t + t*batchSizeThread*xDim + j*xDim, _xData_t + xDim*startingPos + xDim*t, sizeof(float)*xDim);
-				memcpy(softmax->y_t + t*batchSizeThread*yDim + j*yDim, _yData_t + xDim*startingPos + yDim*t, sizeof(float)*yDim);
+				memcpy(lstm[0]->x_t + t*batchSizeThread*xDim + j*xDim, _xData_t + xDim*startingPos + xDim*t, sizeof(TYPENAME)*xDim);
+				memcpy(softmax->y_t + t*batchSizeThread*yDim + j*yDim, _yData_t + xDim*startingPos + yDim*t, sizeof(TYPENAME)*yDim);
 			}
 		}
 
@@ -341,44 +389,44 @@ void TRAIN()
 		// First Layer
 		status = lstm[0]->forward_pass_T();
 		// Layer to Dropout
-		memcpy(dropout[0]->h_t, lstm[0]->h_t, sizeof(float)*_hDims[0]*batchSizeThread*periods);
+		dropout[0]->fetch_from_bottom(lstm[0]->h_t);
 		status = dropout[0]->forward_pass_T();
 		// Future Layer
 		for (int i = 1; i < nLayer; i++)
 		{
-			memcpy(lstm[i]->x_t, dropout[i - 1]->h_t, sizeof(float)*_hDims[i - 1] * batchSizeThread*periods);
+			lstm[i]->fetch_from_bottom(dropout[i - 1]->h_t);
 			status = lstm[i]->forward_pass_T();
-			memcpy(dropout[i]->h_t, lstm[i]->h_t, sizeof(float)*_hDims[i] * batchSizeThread*periods);
+			dropout[i]->fetch_from_bottom(lstm[i]->h_t);
 			status = dropout[i]->forward_pass_T();
 		}
 		// Last Layer to Softmax
-		memcpy(softmax->h_t, dropout[nLayer - 1]->h_t, sizeof(float)*_hDims[nLayer - 1] * batchSizeThread*periods);
+		softmax->fetch_from_bottom(dropout[nLayer - 1]->h_t);
 		status = softmax->forward_pass_T();
 
 		// Output loss
-		memcpy(loss, softmax->loss_t, sizeof(float)*batchSizeThread*periods);
+		memcpy(loss, softmax->loss_t, sizeof(TYPENAME)*batchSizeThread*periods);
 
 		// Backward
 		status = softmax->back_propagation_T();
 		// Softmax to Last Layer
-		memcpy(dropout[nLayer - 1]->dh_t, softmax->dh_t, sizeof(float)*_hDims[nLayer - 1] * batchSizeThread*periods);
+		dropout[nLayer - 1]->fetch_from_top(softmax->dh_t);
 		status = dropout[nLayer - 1]->back_propagation_T();
+		lstm[nLayer - 1]->fetch_from_top(dropout[nLayer - 1]->dh_t);
+		status = lstm[nLayer - 1]->back_propagation_T();
 		// Last Layer to First layer
-		for (int i = nLayer - 1; i >= 1; i--)
+		for (int i = nLayer - 2; i >= 0; i--)
 		{
-			memcpy(lstm[i]->dtop_t, dropout[i]->dh_t, sizeof(float)*_hDims[i] * batchSizeThread*periods);
+			dropout[i]->fetch_from_top(lstm[i + 1]->dx_t);
+			status = dropout[i]->back_propagation_T();
+			lstm[i]->fetch_from_top(dropout[i]->dh_t);
 			status = lstm[i]->back_propagation_T();
-			memcpy(dropout[i - 1]->dh_t, lstm[i]->dx_t, sizeof(float)*_hDims[i - 1] * batchSizeThread*periods);
-			status = dropout[i - 1]->back_propagation_T();
 		}
-		// First Layer
-		memcpy(lstm[0]->dtop_t, dropout[0]->dh_t, sizeof(float)*_hDims[0] * batchSizeThread*periods);
-		status = lstm[0]->back_propagation_T();
 
 		// Store information for next training
 		for (int i = 0; i < nLayer ; i++)
 		{
 			lstm[i]->store_info();
 		}
+
 	}
 }

@@ -15,6 +15,15 @@
 #define RNN_ERR_WEIGHTS_UNINITIATED -2
 #define RNN_ERR_DWEIGHTS_UNINITIATED -3
 
+#if TYPENAME==double
+#define gemm cblas_dgemm
+#define omatcopy mkl_domatcopy
+#elif TYPENAME=float
+#define gemm cblas_sgemm
+#define omatcopy mkl_somatcopy
+#endif
+
+
 class RnnLayer {
 public:
 	int periods;
@@ -58,6 +67,13 @@ public:
 
 	// Static
 	static int compute_size_weights(int xDim, int hDim) { return hDim * 4 * (xDim + hDim + 1); }
+
+	// Clear information
+	void clear_info()
+	{
+		memset(hm_0, 0, sizeof(T)*hDim*batchSize);
+		memset(sm_0, 0, sizeof(T)*hDim*batchSize);
+	}
 	
 	// Constructor
 	LstmLayer(int _xDim, int _hDim, int _periods, int _batchSize)
@@ -79,8 +95,7 @@ public:
 		}
 
 		// Set initial information at construction
-		memset(hm_0, 0, sizeof(T)*hDim*batchSize);
-		memset(sm_0, 0, sizeof(T)*hDim*batchSize);
+		clear_info();
 	}
 
 	// Destructor
@@ -163,7 +178,36 @@ public:
 	
 	/// Store information for next training
 	void store_info();
+
+	/// Fetch information
+	void fetch_from_bottom(T* src);
+	void fetch_from_bottom_with_dropout(T* src, T dropoutRate);
+	void fetch_from_top(T* src);
 };
+
+template<typename T>
+void LstmLayer<T>::fetch_from_bottom_with_dropout(T* src, T dropoutRate)
+{
+	memcpy(x_t, src, sizeof(T)*xDim*batchSize*periods);
+	T keepRate = 1 - dropoutRate;
+#pragma simd
+	for (int j = 0; j < xDim*batchSize*periods ; j++)
+	{
+		x_t[j] *= keepRate;
+	}
+}
+
+template<typename T>
+void LstmLayer<T>::fetch_from_bottom(T* src)
+{
+	memcpy(x_t, src, sizeof(T)*xDim*batchSize*periods);
+}
+
+template<typename T>
+void LstmLayer<T>::fetch_from_top(T* src)
+{
+	memcpy(dtop_t, src, sizeof(T)*hDim*batchSize*periods);
+}
 
 template<typename T>
 void LstmLayer<T>::store_info()
@@ -294,8 +338,8 @@ void LstmLayer<T>::alloc()
 	ONES_BATCH_SIZE = (T*)malloc(sizeof(T)*batchSize);
 }
 
-template<>
-int LstmLayer<float>::forward_pass(int t)
+template<typename T>
+int LstmLayer<T>::forward_pass(int t)
 {
 	if (!weights_x | !weights_h | !biases)
 	{
@@ -309,19 +353,19 @@ int LstmLayer<float>::forward_pass(int t)
 	int tidx = t - 1;
 
 	// Extract time t variable
-	float* x = x_t + tidx*xStride;
-	float* gifo_lin = gifo_lin_t + tidx*gifoStride;
-	float* g = g_t + tidx*hStride;
-	float* ii = i_t + tidx*hStride;
-	float* f = f_t + tidx*hStride;
-	float* o = o_t + tidx*hStride;
-	float* h = h_t + tidx*hStride;
-	float* s = s_t + tidx*hStride;
-	float* tanhs = tanhs_t + tidx*hStride;
+	T* x = x_t + tidx*xStride;
+	T* gifo_lin = gifo_lin_t + tidx*gifoStride;
+	T* g = g_t + tidx*hStride;
+	T* ii = i_t + tidx*hStride;
+	T* f = f_t + tidx*hStride;
+	T* o = o_t + tidx*hStride;
+	T* h = h_t + tidx*hStride;
+	T* s = s_t + tidx*hStride;
+	T* tanhs = tanhs_t + tidx*hStride;
 
 	// Forward pass one time
-	float* hm;
-	float* sm;
+	T* hm;
+	T* sm;
 	if (t > 1)
 	{
 		hm = h_t + (tidx - 1)*hStride;
@@ -333,20 +377,20 @@ int LstmLayer<float>::forward_pass(int t)
 		sm = sm_0;
 	}
 
-	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, gifoDim, batchSize, xDim, 1, weights_x, gifoDim, x, xDim, 0, gifo_lin, gifoDim);
-	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, gifoDim, batchSize, hDim, 1, weights_h, gifoDim, hm, hDim, 1, gifo_lin, gifoDim);
+	gemm(CblasColMajor, CblasNoTrans, CblasNoTrans, gifoDim, batchSize, xDim, 1, weights_x, gifoDim, x, xDim, 0, gifo_lin, gifoDim);
+	gemm(CblasColMajor, CblasNoTrans, CblasNoTrans, gifoDim, batchSize, hDim, 1, weights_h, gifoDim, hm, hDim, 1, gifo_lin, gifoDim);
 	// Plus biases
 	for (int j = 0; j < batchSize; j++)
 	{
-		float* gifo_lin_j = gifo_lin + j*gifoDim;
+		T* gifo_lin_j = gifo_lin + j*gifoDim;
 #pragma simd
 		for (int k = 0; k < gifoDim; k++)
 			gifo_lin_j[k] += biases[k];
 
-		memcpy(g_lin + j*hDim, gifo_lin + j*gifoDim + 0 * hDim, sizeof(float)*hDim);
-		memcpy(i_lin + j*hDim, gifo_lin + j*gifoDim + 1 * hDim, sizeof(float)*hDim);
-		memcpy(f_lin + j*hDim, gifo_lin + j*gifoDim + 2 * hDim, sizeof(float)*hDim);
-		memcpy(o_lin + j*hDim, gifo_lin + j*gifoDim + 3 * hDim, sizeof(float)*hDim);
+		memcpy(g_lin + j*hDim, gifo_lin + j*gifoDim + 0 * hDim, sizeof(T)*hDim);
+		memcpy(i_lin + j*hDim, gifo_lin + j*gifoDim + 1 * hDim, sizeof(T)*hDim);
+		memcpy(f_lin + j*hDim, gifo_lin + j*gifoDim + 2 * hDim, sizeof(T)*hDim);
+		memcpy(o_lin + j*hDim, gifo_lin + j*gifoDim + 3 * hDim, sizeof(T)*hDim);
 	}
 
 #pragma simd
@@ -364,8 +408,8 @@ int LstmLayer<float>::forward_pass(int t)
 	return 0;
 }
 
-template<>
-int LstmLayer<float>::back_propagation(int t)
+template<typename T>
+int LstmLayer<T>::back_propagation(int t)
 {
 	if (batchSize > batchSize)
 	{
@@ -383,8 +427,8 @@ int LstmLayer<float>::back_propagation(int t)
 	// Convert to 0 based
 	int tidx = t - 1;
 
-	float* hm;
-	float* sm;
+	T* hm;
+	T* sm;
 	if (t == 1)
 	{
 		hm = hm_0;
@@ -397,37 +441,37 @@ int LstmLayer<float>::back_propagation(int t)
 	}
 
 	// Extract time t variable
-	float* x = x_t + tidx*xStride;
-	float* g = g_t + tidx*hStride;
-	float* ii = i_t + tidx*hStride;
-	float* f = f_t + tidx*hStride;
-	float* o = o_t + tidx*hStride;
-	float* h = h_t + tidx*hStride;
-	float* s = s_t + tidx*hStride;
-	float* tanhs = tanhs_t + tidx*hStride;
+	T* x = x_t + tidx*xStride;
+	T* g = g_t + tidx*hStride;
+	T* ii = i_t + tidx*hStride;
+	T* f = f_t + tidx*hStride;
+	T* o = o_t + tidx*hStride;
+	T* h = h_t + tidx*hStride;
+	T* s = s_t + tidx*hStride;
+	T* tanhs = tanhs_t + tidx*hStride;
 
-	float* dtop = dtop_t + tidx*hStride;
-	float* dx = dx_t + tidx*xStride;
+	T* dtop = dtop_t + tidx*hStride;
+	T* dx = dx_t + tidx*xStride;
 
 	// Back propagation for one time step
 	// Transpose all relevant matrix
-	mkl_somatcopy('C', 'T', hDim, batchSize, 1, g, hDim, g_temp, batchSize);
-	memcpy(g, g_temp, sizeof(float)*hStride);
+	omatcopy('C', 'T', hDim, batchSize, 1, g, hDim, g_temp, batchSize);
+	memcpy(g, g_temp, sizeof(T)*hStride);
 
-	mkl_somatcopy('C', 'T', hDim, batchSize, 1, ii, hDim, g_temp, batchSize);
-	memcpy(ii, g_temp, sizeof(float)*hStride);
+	omatcopy('C', 'T', hDim, batchSize, 1, ii, hDim, g_temp, batchSize);
+	memcpy(ii, g_temp, sizeof(T)*hStride);
 
-	mkl_somatcopy('C', 'T', hDim, batchSize, 1, f, hDim, g_temp, batchSize);
-	memcpy(f, g_temp, sizeof(float)*hStride);
+	omatcopy('C', 'T', hDim, batchSize, 1, f, hDim, g_temp, batchSize);
+	memcpy(f, g_temp, sizeof(T)*hStride);
 
-	mkl_somatcopy('C', 'T', hDim, batchSize, 1, o, hDim, g_temp, batchSize);
-	memcpy(o, g_temp, sizeof(float)*hStride);
+	omatcopy('C', 'T', hDim, batchSize, 1, o, hDim, g_temp, batchSize);
+	memcpy(o, g_temp, sizeof(T)*hStride);
 
-	mkl_somatcopy('C', 'T', hDim, batchSize, 1, tanhs, hDim, g_temp, batchSize);
-	memcpy(tanhs, g_temp, sizeof(float)*hStride);
+	omatcopy('C', 'T', hDim, batchSize, 1, tanhs, hDim, g_temp, batchSize);
+	memcpy(tanhs, g_temp, sizeof(T)*hStride);
 
 	// g_temp is finally used to store sm
-	mkl_somatcopy('C', 'T', hDim, batchSize, 1, sm, hDim, g_temp, batchSize);
+	omatcopy('C', 'T', hDim, batchSize, 1, sm, hDim, g_temp, batchSize);
 	sm = g_temp;
 
 	// dh = dh + dupper
@@ -464,10 +508,10 @@ int LstmLayer<float>::back_propagation(int t)
 	dolin = do.*(o.*(1-o))';
 	dgifo_lin = [dglin,dilin,dflin,dolin];
 	*/
-	float* dg_lin = dgifo_lin + 0 * hStride;
-	float* di_lin = dgifo_lin + 1 * hStride;
-	float* df_lin = dgifo_lin + 2 * hStride;
-	float* doo_lin = dgifo_lin + 3 * hStride;
+	T* dg_lin = dgifo_lin + 0 * hStride;
+	T* di_lin = dgifo_lin + 1 * hStride;
+	T* df_lin = dgifo_lin + 2 * hStride;
+	T* doo_lin = dgifo_lin + 3 * hStride;
 
 #pragma simd
 	for (int j = 0; j < hStride; j++)
@@ -487,16 +531,16 @@ int LstmLayer<float>::back_propagation(int t)
 	}
 
 	// dW_x = dW_x + dgifo_lin'*x';
-	cblas_sgemm(CblasColMajor, CblasTrans, CblasTrans, gifoDim, xDim, batchSize, 1, dgifo_lin, batchSize, x, xDim, 1, dweights_x, gifoDim);
+	gemm(CblasColMajor, CblasTrans, CblasTrans, gifoDim, xDim, batchSize, 1, dgifo_lin, batchSize, x, xDim, 1, dweights_x, gifoDim);
 	// dWh = dW_h + dgifo_lin'*hm';
-	cblas_sgemm(CblasColMajor, CblasTrans, CblasTrans, gifoDim, hDim, batchSize, 1, dgifo_lin, batchSize, hm, hDim, 1, dweights_h, gifoDim);
+	gemm(CblasColMajor, CblasTrans, CblasTrans, gifoDim, hDim, batchSize, 1, dgifo_lin, batchSize, hm, hDim, 1, dweights_h, gifoDim);
 	// dbias = dbas + sum(dgifo_lin,1)';
-	cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans, gifoDim, 1, batchSize, 1, dgifo_lin, batchSize, ONES_BATCH_SIZE, batchSize, 1, dbiases, gifoDim);
+	gemm(CblasColMajor, CblasTrans, CblasNoTrans, gifoDim, 1, batchSize, 1, dgifo_lin, batchSize, ONES_BATCH_SIZE, batchSize, 1, dbiases, gifoDim);
 
 	// dhm = dgifo_lin * W_h;
-	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, batchSize, hDim, gifoDim, 1, dgifo_lin, batchSize, weights_h, gifoDim, 0, dhm, batchSize);
+	gemm(CblasColMajor, CblasNoTrans, CblasNoTrans, batchSize, hDim, gifoDim, 1, dgifo_lin, batchSize, weights_h, gifoDim, 0, dhm, batchSize);
 	// dx = dgifo_lin * W_x
-	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, batchSize, xDim, gifoDim, 1, dgifo_lin, batchSize, weights_x, gifoDim, 0, dx, batchSize);
+	gemm(CblasColMajor, CblasNoTrans, CblasNoTrans, batchSize, xDim, gifoDim, 1, dgifo_lin, batchSize, weights_x, gifoDim, 0, dx, batchSize);
 
 	return 0;
 }
@@ -585,7 +629,37 @@ public:
 	int forward_pass(int t);
 
 	int back_propagation(int t);
+
+	void fetch_from_bottom(T* src);
+	void fetch_from_bottom_with_dropout(T* src, T dropoutRate);
+	// Top is the output, since it's a final layer
+	void fetch_from_top(T* src);
 };
+
+template<typename T>
+void SoftmaxLayer<T>::fetch_from_bottom_with_dropout(T* src, T dropoutRate)
+{
+	memcpy(h_t, src, sizeof(T)*hDim*batchSize*periods);
+	T keepRate = 1 - dropoutRate;
+#pragma simd
+	for (int j = 0; j < hDim*batchSize*periods ; j++)
+	{
+		h_t[j] *= keepRate;
+	}
+}
+
+template<typename T>
+void SoftmaxLayer<T>::fetch_from_bottom(T* src)
+{
+	memcpy(h_t, src, sizeof(T)*hDim*batchSize*periods);
+}
+
+template<typename T>
+void SoftmaxLayer<T>::fetch_from_top(T* src)
+{
+	memcpy(y_t, src, sizeof(T)*yDim*batchSize*periods);
+}
+
 
 template<typename T>
 void SoftmaxLayer<T>::assign_weights(T** p)
@@ -639,8 +713,8 @@ void SoftmaxLayer<T>::alloc()
 	ONES_BATCH_SIZE = (T*)malloc(sizeof(T)*batchSize);
 }
 
-template<>
-int SoftmaxLayer<float>::forward_pass(int t)
+template<typename T>
+int SoftmaxLayer<T>::forward_pass(int t)
 {
 	if (!weights | !biases)
 	{
@@ -652,13 +726,13 @@ int SoftmaxLayer<float>::forward_pass(int t)
 	// Convert to 0 based
 	int tidx = t - 1;
 
-	float* h = h_t + tidx*hStride;
-	float* y = y_t + tidx*yStride;
-	float* ylin = ylin_t + tidx*yStride;
-	float* yhat = yhat_t + tidx*yStride;
-	float* loss = loss_t + tidx*batchSize;
+	T* h = h_t + tidx*hStride;
+	T* y = y_t + tidx*yStride;
+	T* ylin = ylin_t + tidx*yStride;
+	T* yhat = yhat_t + tidx*yStride;
+	T* loss = loss_t + tidx*batchSize;
 
-	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, yDim, batchSize, hDim, 1, weights, yDim, h, hDim, 0, ylin, yDim);
+	gemm(CblasColMajor, CblasNoTrans, CblasNoTrans, yDim, batchSize, hDim, 1, weights, yDim, h, hDim, 0, ylin, yDim);
 
 	for (int j = 0; j < batchSize; j++)
 	{
@@ -674,7 +748,7 @@ int SoftmaxLayer<float>::forward_pass(int t)
 			ylin[j*yDim + k] += biases[k];
 		}
 
-		float ylin_max = -1e20;
+		T ylin_max = -1e20;
 #pragma novector
 		for (int k = 0; k < yDim; k++)
 		{
@@ -682,7 +756,7 @@ int SoftmaxLayer<float>::forward_pass(int t)
 				ylin_max = ylin[j*yDim + k];
 		}
 
-		float sum_exp_ylin_minus_max = 0;
+		T sum_exp_ylin_minus_max = 0;
 
 #pragma novector
 		for (int k = 0; k < yDim; k++)
@@ -691,7 +765,7 @@ int SoftmaxLayer<float>::forward_pass(int t)
 			sum_exp_ylin_minus_max += yhat[j*yDim + k];
 		}
 
-		float loss_sum = 0;
+		T loss_sum = 0;
 #pragma novector
 		for (int k = 0; k < yDim; k++)
 		{
@@ -704,8 +778,8 @@ int SoftmaxLayer<float>::forward_pass(int t)
 	return 0;
 }
 
-template<>
-int SoftmaxLayer<float>::back_propagation(int t)
+template<typename T>
+int SoftmaxLayer<T>::back_propagation(int t)
 {
 	if (!dweights | !dbiases)
 	{
@@ -717,27 +791,27 @@ int SoftmaxLayer<float>::back_propagation(int t)
 	// Convert to 0 based
 	int tidx = t - 1;
 
-	float* h = h_t + tidx*hStride;
-	float* y = y_t + tidx*yStride;
-	float* ylin = ylin_t + tidx*yStride;
-	float* yhat = yhat_t + tidx*yStride;
-	float* dh = dh_t + tidx*hStride;
+	T* h = h_t + tidx*hStride;
+	T* y = y_t + tidx*yStride;
+	T* ylin = ylin_t + tidx*yStride;
+	T* yhat = yhat_t + tidx*yStride;
+	T* dh = dh_t + tidx*hStride;
 
 	for (int k = 0; k < yDim*batchSize; k++)
 	{
 		ylin[k] = yhat[k] - y[k];
 	}
 	// Transpose matrix
-	mkl_somatcopy('C', 'T', yDim, batchSize, 1, ylin, yDim, dyhat, batchSize);
+	omatcopy('C', 'T', yDim, batchSize, 1, ylin, yDim, dyhat, batchSize);
 
 	// dWyh = dWyh + dyhat'*h';
-	cblas_sgemm(CblasColMajor, CblasTrans, CblasTrans, yDim, hDim, batchSize, 1, dyhat, batchSize, h, hDim, 1, dweights, yDim);
+	gemm(CblasColMajor, CblasTrans, CblasTrans, yDim, hDim, batchSize, 1, dyhat, batchSize, h, hDim, 1, dweights, yDim);
 
 	// dby = dby + sum(dyhat,1)';
-	cblas_sgemm(CblasColMajor, CblasTrans, CblasNoTrans, yDim, 1, batchSize, 1, dyhat, batchSize, ONES_BATCH_SIZE, batchSize, 1, dbiases, yDim);
+	gemm(CblasColMajor, CblasTrans, CblasNoTrans, yDim, 1, batchSize, 1, dyhat, batchSize, ONES_BATCH_SIZE, batchSize, 1, dbiases, yDim);
 
 	// dh = dyhat * Wyh;
-	cblas_sgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, batchSize, hDim, yDim, 1, dyhat, batchSize, weights, yDim, 0, dh, batchSize);
+	gemm(CblasColMajor, CblasNoTrans, CblasNoTrans, batchSize, hDim, yDim, 1, dyhat, batchSize, weights, yDim, 0, dh, batchSize);
 
 	return 0;
 }
@@ -745,6 +819,7 @@ int SoftmaxLayer<float>::back_propagation(int t)
 #pragma endregion SoftmaxLayer
 
 #pragma region DropoutLayer
+
 template <typename T>
 class DropoutLayer : public RnnLayer {
 public:
@@ -786,7 +861,22 @@ public:
 		return (seed >> 16) & 0x7FFF;
 	}
 
+	void fetch_from_bottom(T* src);
+	void fetch_from_top(T* src);
+
 };
+
+template <typename T>
+void DropoutLayer<T>::fetch_from_bottom(T* src)
+{
+	memcpy(h_t, src, sizeof(T)*hDim*batchSize*periods);
+}
+
+template <typename T>
+void DropoutLayer<T>::fetch_from_top(T* src)
+{
+	memcpy(dh_t, src, sizeof(T)*hDim*batchSize*periods);
+}
 
 template <typename T>
 int DropoutLayer<T>::forward_pass(int t)
@@ -833,13 +923,12 @@ int DropoutLayer<T>::back_propagation(int t)
 		{
 			// Recall size of D is [hDim, batchSize]
 			// Size of dh is [batchSize, hDim]
-			if (!D[k*hDim + j])
+			if (D[k*hDim + j] == 0)
 				dh[j*batchSize + k] = 0;
 		}
 	}
 
 	return 0;
 }
-
 
 #pragma endregion DropoutLayer

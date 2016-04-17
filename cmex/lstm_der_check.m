@@ -1,8 +1,8 @@
-function [weights,params] = lstm_train(xData_t,yData_t,netMexName,params,weights_hotstart)
+function [dweights,dweights_numerical] = lstm_der_check(xData_t,yData_t,netMexName,params,weights_hotstart)
 %% Parameters
 lstm_parameters;
 
-%% Convert data
+%% Convert Data
 xData_t = cast(xData_t,typename);
 yData_t = cast(yData_t,typename);
 
@@ -31,8 +31,6 @@ if (nargin>=5)
 end
 
 %% Pre treatment
-MEX_TASK = MEX_INIT;
-eval(netMexName);
 MEX_TASK = MEX_PRE_TREAT;
 eval(netMexName);
 
@@ -45,36 +43,41 @@ batchDataStride = batchDataStride - 1;
 % Space for loss
 loss_thread = zeros(periods,batchSizeThread,NumThreads,typename);
 
-%% Train
+%% Derivative check
+% Evaluate at current point
+MEX_TASK = MEX_INIT;
+eval(netMexName);
 MEX_TASK = MEX_TRAIN;
-saveCount = 0;
-timeCount = tic;
-last_loss_training = inf;
-for currentBatch=1:lengthDataBatch
+eval(netMexName);
+% Collapse thread dweights
+dweights = reshape(dweights_thread,[],NumThreads);
+% Sum over training set
+dweights = sum(dweights,2);
+dweights = reshape(dweights,size(weights));
+% Across periods
+loss = sum(loss_thread,1);
+
+% Evaluate at perturbation
+delta = 1e-6;
+dweights_numerical = zeros(1,sizeWeights,typename);
+for iw = 1:sizeWeights
+    % Perturb the weight a bit
+    deltaWeights = delta;
+    weights(iw) = weights(iw) + deltaWeights;
+    
+    % Evaluate Net, with fresh seed
+    MEX_TASK = MEX_INIT;
+    eval(netMexName);
+    MEX_TASK = MEX_TRAIN;
     eval(netMexName);
     
-    % Collapse thread dweights
-    dweights = reshape(dweights_thread,[],NumThreads);
-    % Sum over training set
-    dweights = sum(dweights(:,1:end-1),2);
-    dweights = reshape(dweights,size(weights));
+    % Perturb back
+    weights(iw) = weights(iw) - deltaWeights;
     
-    % Adjust learning rate
-    RmsProp_r = (1-RmsPropDecay)*dweights.^2 + RmsPropDecay*RmsProp_r;
-    RmsProp_v = learningRate ./ (RmsProp_r.^0.5);
-    % RmsProp_v = min(RmsProp_v,learningRate*10);
-    % RmsProp_v = max(RmsProp_v,learningRate/10);
-    RmsProp_v = RmsProp_v.* dweights;
+    % Across periods
+    loss_new = sum(loss_thread,1);
     
-    %  Learn
-    weights = weights - RmsProp_v;
-    
-    % Output
-    saveCount = saveCount + 1;
-    if mod(saveCount,saveFreq)==0
-        output_func;
-    end
-    
-    batchDataStride = batchDataStride + 1;
+    % Compute numerical derivative
+    dweights_numerical(iw) = sum((loss_new(:) - loss(:)) / deltaWeights);
 end
 end

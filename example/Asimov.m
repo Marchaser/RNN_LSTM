@@ -16,19 +16,20 @@ nLayer = 2;
 hDims = [256 256];
 batchSize = 64;
 periods = 100;
-learningRate = 1e-3;
-dropOutRate = 0.5;
+learningRate = 0.1;
+learningRateDecay = 1;
+dropoutRate = 0.5;
 
 saveFreq = 100;
 
-% NumThreads = 8;
+NumThreads = 4;
 NSlots = getenv('NSLOTS');
 if (strcmp(NSlots, '') == 0)
     NumThreads = str2double(NSlots);
+    fprintf('NumThreads: %d\n',NumThreads);
 end
-fprintf('NumThreads: %d\n',NumThreads);
 
-params = v2struct(xDim,yDim,batchSize,periods,nLayer,hDims,NumThreads,learningRate,dropOutRate,NumThreads,saveFreq);
+params = v2struct(xDim,yDim,batchSize,periods,nLayer,hDims,NumThreads,learningRate,dropoutRate,NumThreads,saveFreq,learningRateDecay);
 
 xData = text_linear_code(:,1:end-1);
 yData = text_linear_code(:,2:end);

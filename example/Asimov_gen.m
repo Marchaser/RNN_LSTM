@@ -1,5 +1,5 @@
 function Asimov_gen
-weights = load('weights_2000_128000_323.4194_320.7245.mat');
+weights = load('weights_500_32000_315.8776_320.6022.mat');
 weights = v2struct(weights);
 
 text = fileread('Foundation - Isaac Asimov.txt');
@@ -20,12 +20,13 @@ nLayer = 2;
 xDim = size(words_code_linear,1);
 yDim = size(words_code_linear,1);
 NumThreads = 4;
+dropoutRate = 0.5;
 
-params = v2struct(xDim,yDim,batchSize,periods,nLayer,hDims,NumThreads);
+params = v2struct(xDim,yDim,batchSize,periods,nLayer,hDims,NumThreads,dropoutRate);
 
 %% Predict
 addpath('../cmex');
-numWordsPredicted = 5e2;
+numWordsPredicted = 2e2;
 clear lstmNet;
 for j=1:numWordsPredicted
     xData = words_code_linear(:,end-periods+1:end);
