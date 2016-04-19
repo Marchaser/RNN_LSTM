@@ -15,6 +15,6 @@ if loss_training > last_loss_training
 end
 last_loss_training = loss_training;
 
-fprintf('Saving at %d iters, with %d samples processed\n',saveCount,currentBatch*batchSize);
-save(['weights_' num2str(saveCount) '_' num2str(currentBatch*batchSize) '_' num2str(loss_training) '_' num2str(loss_validation) '.mat'], 'weights');
+fprintf('Saving at %d iters, with %d samples processed\n',saveCount,currentTotalSamples);
+save(['weights_' num2str(saveCount) '_' num2str(currentTotalSamples) '_' num2str(loss_training) '_' num2str(loss_validation) '.mat'], 'weights');
 timeCount = tic;

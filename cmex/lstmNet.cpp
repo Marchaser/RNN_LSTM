@@ -10,15 +10,17 @@
 #include "MatlabMatrix.h"
 #include <string.h>
 
-#ifndef TYPENAME
-#define TYPENAME double
+#ifndef TYPENAME_FLOAT
+#define TYPENAME_DOUBLE
 #endif
 
 #include "nnet.h"
 
-#if TYPENAME==double
+#if defined(TYPENAME_DOUBLE)
+#define TYPENAME double
 #define GET_V_VIEW GET_DV_VIEW
-#elif TYPENAME==float
+#elif defined(TYPENAME_FLOAT)
+#define TYPENAME float
 #define GET_V_VIEW GET_FV_VIEW
 #endif
 
@@ -187,6 +189,8 @@ void ALLOC()
 		if (softmax_thread[thread_id] == 0)
 			softmax_thread[thread_id] = new SoftmaxLayer<TYPENAME>(_hDims[nLayer-1], yDim, periods, batchSizeThread);
 	}
+
+	INIT();
 }
 
 void PRE_TREAT()
@@ -252,6 +256,8 @@ void PREDICT()
 	GET_INT(NumThreads);
 	GET_SGL(dropoutRate);
 
+	mkl_set_num_threads(NumThreads);
+
 	// Output
 	GET_V_VIEW(yhat_t);
 
@@ -299,8 +305,7 @@ void PREDICT()
 	// Store information
 	for (int i = 0; i < nLayer ; i++)
 	{
-		lstm[i]->store_info();
-		
+		lstm[i]->store_info(lstm[i]->h_t, lstm[i]->s_t);
 	}
 
 	// Copy to output
@@ -425,7 +430,8 @@ void TRAIN()
 		// Store information for next training
 		for (int i = 0; i < nLayer ; i++)
 		{
-			lstm[i]->store_info();
+			// lstm[i]->clear_info();
+			lstm[i]->store_info(lstm[i]->h_t + ((periods - 1)*lstm[i]->hStride), lstm[i]->s_t + ((periods - 1)*lstm[i]->hStride));
 		}
 
 	}

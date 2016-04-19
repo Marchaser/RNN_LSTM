@@ -24,13 +24,21 @@ initWeightsScale = 0.1;
 
 learningRateDecay = 0.95;
 
+% dropout starting periods
+dropoutStart = 0;
+
 % RmsProp
 RmsPropDecay = 0.9;
 
+% Adam
+Adam_beta1 = 0.9;
+Adam_beta2 = 0.999;
+Adam_epsilon=1e-8;
+
 % Overwrite
 if (nargin>=4)
-    allowedParamsName = {'xDim','yDim','batchSize','periods','nLayer','hDims','NumThreads','learningRate','dropoutRate','saveFreq', ...
-        'learningRateDecay','RmsPropDecay','dropoutSeed','initWeightsScale'};
+    allowedParamsName = {'xDim','yDim','batchSize','periods','nLayer','hDims','NumThreads','learningRate','dropoutRate','dropoutStart','saveFreq', ...
+        'learningRateDecay','RmsPropDecay','dropoutSeed','initWeightsScale','typename'};
     paramsName = fieldnames(params);
     isAllowedParamsName = ismember(paramsName,allowedParamsName);
     whichParamsNameNotAllowed = find(isAllowedParamsName==0);
@@ -44,8 +52,8 @@ end
 
 %% Convert data type
 hDims = int32(hDims);
-learningRate = typecast(learningRate,typename);
-RmsPropDecay = typecast(RmsPropDecay,typename);
+learningRate = cast(learningRate,typename);
+RmsPropDecay = cast(RmsPropDecay,typename);
 
 %% Check consistent of parameters
 assert(mod(batchSize,NumThreads)==0)

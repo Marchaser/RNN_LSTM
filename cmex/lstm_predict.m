@@ -45,6 +45,6 @@ while (batchStart <= lengthData)
     
     eval(netMexName);
     
-    yhat_out(:,batchStart-batchSize:batchStart-1,:) = yhat_t;
+    yhat_out(:,(batchStart-batchSize):(batchStart-1),:) = yhat_t;
 end
 end

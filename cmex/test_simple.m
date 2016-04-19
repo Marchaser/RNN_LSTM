@@ -14,10 +14,10 @@ for t=1:Ts
     xData0 = [xData0 xNext];
 end
 %}
-xData0 = [1 2];
-Ts = 2e5;
+xData0 = [1 2 3 4 5 6 7 8 9 0];
+Ts = 1e5;
 for t=1:Ts
-    xNext = mod(sum(xData0(end:-1:end-1)),10);
+    xNext = mod(sum(xData0(end:-1:end-2)),10);
     xData0 = [xData0 xNext];
 end
 
@@ -36,23 +36,30 @@ xData = xData(:,1:end-1);
 xDim = size(xData,1);
 yDim = size(yData,1);
 batchSize = 64;
-periods = 10; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
+periods = 5; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
 nLayer = 2;
 hDims = [100 100];
-learningRate = 0.1;
+learningRate = 5e-3;
+learningRateDecay = 1;
 dropoutRate = 0.5;
 NumThreads = 4;
 saveFreq = 500;
-params = v2struct(xDim,yDim,nLayer,hDims,periods,batchSize,learningRate,dropoutRate,NumThreads,saveFreq);
+typename = 'single';
+nnetName = ['lstmNet_' typename];
+params = v2struct(xDim,yDim,nLayer,hDims,periods,batchSize,learningRate,learningRateDecay,dropoutRate,NumThreads,saveFreq,typename);
 
 %% Derivative check
-% clear lstmNet;
-% lstm_der_check(xData,yData,'lstmNet',params);
+%{
+clear mex;
+[dweights_analytical,dweights_numerical] = lstm_der_check(xData,yData,nnetName,params);
+der_err = max(abs(dweights_analytical(:) - dweights_numerical(:)))
+%}
 
 %% Train
-clear lstmNet;
-weights = lstm_train(xData,yData,'lstmNet',params);
+clear mex;
+weights = lstm_train(xData,yData,nnetName,params);
 
 %% Predict
-yhat = lstm_predict(xData(:,1:1001),[],'lstmNet',params,weights);
+clear mex;
+yhat = lstm_predict(xData(:,1:101),[],nnetName,params,weights);
 end
