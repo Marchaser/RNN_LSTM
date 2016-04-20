@@ -15,9 +15,9 @@ for t=1:Ts
 end
 %}
 xData0 = [1 2 3 4 5 6 7 8 9 0];
-Ts = 1e5;
+Ts = 3e5;
 for t=1:Ts
-    xNext = mod(sum(xData0(end:-1:end-2)),10);
+    xNext = mod(sum(xData0(end:-1:end-5)),10);
     xData0 = [xData0 xNext];
 end
 
@@ -36,17 +36,17 @@ xData = xData(:,1:end-1);
 xDim = size(xData,1);
 yDim = size(yData,1);
 batchSize = 64;
-periods = 5; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
+periods = 6; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
 nLayer = 2;
 hDims = [100 100];
 learningRate = 5e-3;
 learningRateDecay = 1;
-dropoutRate = 0.5;
+dropoutRate = 0.0;
 NumThreads = 4;
-saveFreq = 500;
+epochSize = 500;
 typename = 'single';
 nnetName = ['lstmNet_' typename];
-params = v2struct(xDim,yDim,nLayer,hDims,periods,batchSize,learningRate,learningRateDecay,dropoutRate,NumThreads,saveFreq,typename);
+params = v2struct(xDim,yDim,nLayer,hDims,periods,batchSize,learningRate,learningRateDecay,dropoutRate,NumThreads,epochSize,typename);
 
 %% Derivative check
 %{

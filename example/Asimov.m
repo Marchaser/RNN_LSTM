@@ -13,7 +13,7 @@ text_linear_code = dummyvar(text_code)';
 xDim = size(text_linear_code,1);
 yDim = size(text_linear_code,1);
 nLayer = 2;
-hDims = [512 512];
+hDims = [256 256];
 batchSize = 64;
 periods = 100;
 learningRate = 5e-3;
@@ -25,7 +25,7 @@ typename = 'single';
 nnetName = ['lstmNet_' typename];
 clear(nnetName);
 
-saveFreq = 100;
+epochSize = 500;
 
 NumThreads = 4;
 NSlots = getenv('NSLOTS');
@@ -34,7 +34,7 @@ if (strcmp(NSlots, '') == 0)
     fprintf('NumThreads: %d\n',NumThreads);
 end
 
-params = v2struct(xDim,yDim,batchSize,periods,nLayer,hDims,NumThreads,learningRate,dropoutRate,dropoutStart,NumThreads,saveFreq,learningRateDecay,typename);
+params = v2struct(xDim,yDim,batchSize,periods,nLayer,hDims,NumThreads,learningRate,dropoutRate,dropoutStart,NumThreads,epochSize,learningRateDecay,typename);
 
 xData = text_linear_code(:,1:end-1);
 yData = text_linear_code(:,2:end);

@@ -22,8 +22,10 @@ yhat_t = zeros(yDim,batchSize,periods,typename);
 yhat_out = zeros(yDim,lengthData,periods,typename);
 
 %% Initiate networks
-MEX_TASK = MEX_NNET_INFO;
+MEX_TASK = MEX_INFO;
 eval(netMexName);
+% Make sure sizeWeights is correct
+assert(numel(weights)==sizeWeights);
 
 %% Prediction
 MEX_TASK = MEX_PREDICT;

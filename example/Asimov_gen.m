@@ -1,5 +1,5 @@
 function Asimov_gen
-weights = load('weights_800_51200_123.4574_455.5949.mat');
+weights = load('weights_10_320000_171.532_363.7563.mat');
 weights = v2struct(weights);
 numWordsPredicted = 2e3;
 
@@ -15,7 +15,7 @@ words_code_linear(1:max(words_code),:) = dummyvar(words_code)';
 
 batchSize = 64;
 periods = 100;
-hDims = [512 512];
+hDims = [256 256];
 nLayer = 2;
 
 xDim = size(words_code_linear,1);

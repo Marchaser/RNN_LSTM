@@ -56,8 +56,8 @@ eval(netMexName);
 
 batchDataStride = batchDataStride0;
 for j=1:checkSize
-    % MEX_TASK = MEX_INIT;
-    % eval(netMexName);
+    MEX_TASK = MEX_INIT;
+    eval(netMexName);
     MEX_TASK = MEX_TRAIN;
     eval(netMexName);
     % Collapse thread dweights
@@ -86,8 +86,8 @@ for iw = 1:sizeWeights
     
     batchDataStride = batchDataStride0;
     for j=1:checkSize
-        % MEX_TASK = MEX_INIT;
-        % eval(netMexName);
+        MEX_TASK = MEX_INIT;
+        eval(netMexName);
         MEX_TASK = MEX_TRAIN;
         eval(netMexName);
         
