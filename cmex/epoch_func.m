@@ -29,6 +29,7 @@ fprintf('Time used in validation: %g\n',toc(timeTic));
 fprintf('Total time used: %g\n',toc(totalTimeTic));
 
 fprintf('lossTraining: %g\nlossValidation: %g\n',lossTraining,lossValidation);
+fprintf('Max abs(weights): %g\n',max(abs(weights)));
 
 % Update learning Rate if no improvement
 %{
@@ -44,5 +45,6 @@ fprintf('------------------------------------------\n');
 save(['weights_' num2str(epochCount) '_' num2str(step) '_' num2str(currentTotalSamples) '_' num2str(lossTraining) '_' num2str(lossValidation) '.mat'], 'weights');
 save(['trainInfo'], 'trainInfo');
 MEX_TASK = MEX_INIT_MEMORY; % Clear memory
+eval(netMexName);
 % Count time forward
 timeTic = tic;

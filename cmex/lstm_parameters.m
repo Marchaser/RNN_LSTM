@@ -16,10 +16,13 @@ batchSize = 64;
 learningRate = 0.01;
 dropoutRate = 0.5;
 NumThreads = 4;
+MklThreads = 1;
 epochSize = inf;
 dropoutSeed = 823;
 
 temperature =  1;
+
+weightsDecay = 0;
 
 % Data set
 trainingSet = 0.95;
@@ -27,6 +30,7 @@ validationSet = 0.05;
 
 % Init parameters scale
 initWeightsScale = 0.1;
+initForgetBiases = 0;
 
 learningRateDecay = 0.95;
 

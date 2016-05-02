@@ -38,15 +38,20 @@ yDim = size(yData,1);
 batchSize = 64;
 periods = 6; % We know that only 3 periods ahead information are relevant, supply 4 to fool it
 nLayer = 2;
+% hDims = [100 100];
 hDims = [100 100];
 learningRate = 5e-3;
 learningRateDecay = 1;
-dropoutRate = 0.0;
-NumThreads = 4;
+dropoutRate = 0.5;
+NumThreads = 8;
+MklThreads = 1;
 epochSize = 500;
+% typename = 'double';
 typename = 'single';
 nnetName = ['lstmNet_' typename];
-params = v2struct(xDim,yDim,nLayer,hDims,periods,batchSize,learningRate,learningRateDecay,dropoutRate,NumThreads,epochSize,typename);
+initForgetBiases = 1;
+weightsDecay = 0;
+params = v2struct(xDim,yDim,nLayer,hDims,periods,batchSize,learningRate,learningRateDecay,dropoutRate,NumThreads,MklThreads,epochSize,typename,initForgetBiases,weightsDecay);
 
 %% Derivative check
 %{

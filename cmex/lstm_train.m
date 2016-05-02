@@ -76,8 +76,21 @@ for step=1:lengthTrainingBatch
     currentTotalSamples = step*batchSize;
     
     batchDataStride = batchTrainingStride;
-    MEX_TASK = MEX_TRAIN;
+    MEX_TASK = MEX_COMP_DWEIGHTS;
     eval(netMexName);
+%     %{
+    MEX_TASK = MEX_APPLY_WEIGHTS_CONSTR;
+    eval(netMexName);
+    MEX_TASK = MEX_UPDATE_WEIGHTS;
+    eval(netMexName);
+    %}
+    
+    %{
+    % Apply weights decay
+    dweights = dweights_thread(:,:,1) + weightsDecay*weights;
+    % Call optimizer
+    optim_Adam;
+    %}
     
     % Output
     if mod(step,epochSize)==0

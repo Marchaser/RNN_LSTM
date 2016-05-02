@@ -1,21 +1,25 @@
-function Asimov_gen
-weights = load('weights_31_6200_396800_89.1684_290.6469.mat');
+function quantangshi_gen
+weights = load('weights_109_21800_1395200_139.9743_350.3879.mat');
 weights = v2struct(weights);
-numWordsPredicted = 1e4;
+numWordsPredicted = 2e3;
 
-text = fileread('Foundation - Isaac Asimov.txt');
+fprintf('Max weights: %g\n',max(weights));
+fprintf('Min weights: %g\n',min(weights));
+
+text = fileread('quantangshi.txt');
+text = text(1:3e6);
 [text_dic,code_text,text_code] = unique(text);
 
 % Initial words
-% words = fileread('start_words.txt');
-words = text(1001:1101);
+words = fileread('start_words.txt');
+% words = text(1001:1101);
 [~,words_code] = ismember(words,text_dic);
 words_code_linear = zeros(max(text_code),length(words_code));
 words_code_linear(1:max(words_code),:) = dummyvar(words_code)';
 
 batchSize = 64;
 periods = 100;
-hDims = [256 256];
+hDims = [512 512];
 nLayer = 2;
 
 xDim = size(words_code_linear,1);
@@ -29,7 +33,7 @@ if (strcmp(NSlots, '') == 0)
 end
 
 dropoutRate = 0.5;
-typename = 'single';
+typename = 'double';
 nnetName = ['lstmNet_' typename];
 
 params = v2struct(xDim,yDim,batchSize,periods,nLayer,hDims,NumThreads,dropoutRate,typename);

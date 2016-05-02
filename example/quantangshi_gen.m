@@ -1,9 +1,13 @@
-function Asimov_gen
-weights = load('weights_31_6200_396800_89.1684_290.6469.mat');
+function quantangshi_gen
+weights = load('weights_78_15600_998400_277.3535_306.0343.mat');
 weights = v2struct(weights);
-numWordsPredicted = 1e4;
+numWordsPredicted = 2e3;
 
-text = fileread('Foundation - Isaac Asimov.txt');
+max(weights)
+min(weights)
+
+text = fileread('quantangshi.txt');
+text = text(1:1e6);
 [text_dic,code_text,text_code] = unique(text);
 
 % Initial words
@@ -15,7 +19,7 @@ words_code_linear(1:max(words_code),:) = dummyvar(words_code)';
 
 batchSize = 64;
 periods = 100;
-hDims = [256 256];
+hDims = [512 512];
 nLayer = 2;
 
 xDim = size(words_code_linear,1);

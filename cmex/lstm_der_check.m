@@ -13,7 +13,7 @@ batchSizeThread = batchSize / NumThreads;
 lengthData = size(xData_t,2) - periods+1;
 
 %% Initiate networks
-MEX_TASK = MEX_NNET_INFO;
+MEX_TASK = MEX_INFO;
 eval(netMexName);
 % sizeWeights will be returned by MEX
 % Init weights
@@ -48,24 +48,25 @@ loss_thread = zeros(periods,batchSizeThread,NumThreads,typename);
 checkSize = 3;
 
 % Eavluate at Current points
-dweights_analytical = zeros(1,sizeWeights,checkSize,typename);
+dweights_analytical = zeros(sizeWeights,checkSize,typename);
 loss = zeros(1,batchSizeThread,NumThreads,checkSize,typename);
-% Evaluate Net, with fresh seed
-MEX_TASK = MEX_INIT;
+% Evaluate Net, with fresh seed and memory
+MEX_TASK = MEX_INIT_SEED;
+eval(netMexName);
+MEX_TASK = MEX_INIT_MEMORY;
 eval(netMexName);
 
 batchDataStride = batchDataStride0;
 for j=1:checkSize
-    MEX_TASK = MEX_INIT;
+    MEX_TASK = MEX_INIT_SEED;
     eval(netMexName);
-    MEX_TASK = MEX_TRAIN;
+    MEX_TASK = MEX_INIT_MEMORY;
     eval(netMexName);
-    % Collapse thread dweights
-    dweights = reshape(dweights_thread,[],NumThreads);
-    % Sum over training set
-    dweights = sum(dweights,2);
-    dweights = reshape(dweights,size(weights));
-    dweights_analytical(:,:,j) = dweights;
+    MEX_TASK = MEX_COMP_DWEIGHTS;
+    eval(netMexName);
+
+    % Store dweights
+    dweights_analytical(:,j) = dweights_thread(:,:,1);
     % Across periods
     loss(:,:,:,j) = sum(loss_thread,1);
     
@@ -74,28 +75,27 @@ end
 
 % Evaluate at perturbation
 delta = 1e-6;
-dweights_numerical = zeros(1,sizeWeights,checkSize,typename);
+dweights_numerical = zeros(sizeWeights,checkSize,typename);
 for iw = 1:sizeWeights
     % Perturb the weight a bit
     deltaWeights = delta;
     weights(iw) = weights(iw) + deltaWeights;
     
-    % Evaluate Net, with fresh seed
-    MEX_TASK = MEX_INIT;
-    eval(netMexName);
-    
     batchDataStride = batchDataStride0;
     for j=1:checkSize
-        MEX_TASK = MEX_INIT;
+        MEX_TASK = MEX_INIT_SEED;
         eval(netMexName);
-        MEX_TASK = MEX_TRAIN;
+        MEX_TASK = MEX_INIT_MEMORY;
+        eval(netMexName);
+        MEX_TASK = MEX_COMP_DWEIGHTS;
         eval(netMexName);
         
         % Across periods
         loss_new = sum(loss_thread,1);
         
         % Compute numerical derivative
-        dweights_numerical(1,iw,j) = sum((loss_new(:) - reshape(loss(:,:,:,j),[],1)) / deltaWeights);
+        dweights_numerical_thread = sum(reshape(loss_new,[],NumThreads)-reshape(loss(:,:,:,j),[],NumThreads),1) / deltaWeights;
+        dweights_numerical(iw,j) = sum(dweights_numerical_thread,2);
         
         batchDataStride = batchDataStride + 1;
     end
